@@ -1,6 +1,13 @@
 # Disassembly-Perception
 Perception tasks needed for robots to disassemble laptops.
 
+## Dependencies
+```
+Python >= 3
+OpenCV >= 4
+ros kinetic/melodic
+```
+
 ## Installation
 ```
 $ cd ~
