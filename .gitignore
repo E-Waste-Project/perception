@@ -386,4 +386,4 @@ devel/share/catkin_tools_prebuild/cmake/catkin_tools_prebuildConfig-version.cmak
 devel/share/catkin_tools_prebuild/cmake/catkin_tools_prebuildConfig.cmake
 devel/share/perception/cmake/perceptionConfig-version.cmake
 devel/share/perception/cmake/perceptionConfig.cmake
-logs/*
+logs*
