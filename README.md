@@ -13,7 +13,7 @@ realsense2
 $ cd ~
 $ git clone https://github.com/E-waste-Project/realsense-ros-custom-driver.git
 $ cp -r realsense-ros-custom-driver/src/ ~/your_catkin_ws/src/
-$ rm -r realsense-ros-custom-driver
+$ sudo rm -r realsense-ros-custom-driver
 $ cd ~/your_catkin_ws
 $ catkin build
 ```
