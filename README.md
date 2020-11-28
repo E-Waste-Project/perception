@@ -11,9 +11,10 @@ ros kinetic/melodic
 ## Installation
 ```
 $ cd ~
-$ git clone https://github.com/AbdelrhmanBassiouny/Disassembly-Perception.git
-$ cd -R ~/src/perception ~/catkin_ws/src
-$ cd ~/catkin_ws && catkin build perception
+$ git clone https://github.com/E-Waste-Project/Disassembly-Perception.git
+$ cp -r Disassembly-Perception/src/ your_catkin_ws/src/
+$ sudo rm -r Disassembly-Perception
+$ cd your_catkin_ws && catkin build perception
 ```
 
 ## Usage
