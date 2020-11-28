@@ -10,9 +10,11 @@ realsense2
 
 ## Installations
 ```
-$ cd ~/catkin_ws/src
-$ git clone https://github.com/AbdelrhmanBassiouny/realsense_ros_custom_driver.git
-$ cd ..
+$ cd ~
+$ git clone https://github.com/E-waste-Project/realsense-ros-custom-driver.git
+$ cp -r realsense-ros-custom-driver/src/ ~/your_catkin_ws/src/
+$ rm -r realsense-ros-custom-driver
+$ cd ~/your_catkin_ws
 $ catkin build
 ```
 
