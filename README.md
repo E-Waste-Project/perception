@@ -9,7 +9,7 @@ ros kinetic/melodic
 ```
 
 ## Installation
-```
+```shell
 $ cd ~
 $ git clone https://github.com/E-Waste-Project/Disassembly-Perception.git
 $ cp -r Disassembly-Perception/src/ your_catkin_ws/src/
