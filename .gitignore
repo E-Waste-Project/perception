@@ -416,4 +416,4 @@ logs/perception/build.mkdir.001.log
 logs/perception/build.mkdir.log
 logs/perception/build.symlink.000.log
 logs/perception/build.symlink.log
-logs/*
+*/logs
