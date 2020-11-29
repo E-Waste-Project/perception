@@ -6,7 +6,9 @@ from numpy.lib.function_base import select
 
 
 class Rect:
+
     color_dict = {'b':(255, 0, 0), 'g':(0, 255, 0), 'r':(0, 0, 255)}
+    
     def __init__(self, x, y, width, height):
         self.x = x
         self.y = y
@@ -19,6 +21,8 @@ class Rect:
         return input_img[self.y: self.y2, self.x: self.x2].copy()
     
     def draw_on(self, input_img, color='g', thickness=2):
+        if color not in self.color_dict.keys():
+            raise ValueError("Available Colors are 'b', 'g', and 'r' for blue, green, and red respectively")
         cv2.rectangle(input_img, (self.x, self.y), (self.x2, self.y2), self.color_dict[color], thickness)
     
     def shift_by(self, x, y):
