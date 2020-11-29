@@ -8,7 +8,7 @@ from numpy.lib.function_base import select
 class Rect:
 
     color_dict = {'b':(255, 0, 0), 'g':(0, 255, 0), 'r':(0, 0, 255)}
-    
+
     def __init__(self, x, y, width, height):
         self.x = x
         self.y = y
@@ -62,8 +62,8 @@ def aspect_ratio(cnt):
     return abs((float(w) / h) - 1)
 
 
-def read_and_resize(directory, img_id, size=(720, 480)):
-    read_img = cv2.imread(directory + str(img_id) + '.jpg')
+def read_and_resize(directory, img_id, size=(720, 480), compression='.jpg'):
+    read_img = cv2.imread(directory + str(img_id) + compression)
     resized_img = cv2.resize(read_img, size)
     return resized_img
 
