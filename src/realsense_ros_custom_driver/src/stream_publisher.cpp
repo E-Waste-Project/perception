@@ -89,7 +89,7 @@ int main(int argc, char *argv[])try
 
   // <!--temporal filter-->
   node_obj.param<bool>("/enable_temporal_filter", enable_temporal_filter, true);
-  node_obj.param<double>("/alpha", alpha, 0.2);
+  node_obj.param<float>("/alpha", alpha, 0.2);
   node_obj.param<int>("/delta", delta, 100);
   node_obj.param<int>("/temporal_holes_fill", temporal_holes_fill, 7); // <!--range is [0 => 8]-->
 
@@ -103,8 +103,8 @@ int main(int argc, char *argv[])try
 
   // <!--threshold filter-->
   node_obj.param<bool>("/enable_threshold_filter", enable_threshold_filter, false);
-  node_obj.param<double>("/max_dist", max_dist, 1.4);
-  node_obj.param<double>("/min_dist", min_dist, 0.1);
+  node_obj.param<float>("/max_dist", max_dist, 1.4);
+  node_obj.param<float>("/min_dist", min_dist, 0.1);
 
   if (show_imgs)
   {
