@@ -1,5 +1,3 @@
-#include"opencv2/opencv.hpp"
-#include "realsense_ros_custom_driver/cv_helpers.hpp"
 #include <sstream>
 #include <iostream>
 #include <fstream>
@@ -23,20 +21,16 @@
 
 
 using namespace std;
-using namespace cv;
 using namespace std::chrono;
 
 // Functions' Prototype definitions.
 float get_depth_scale(rs2::device dev);
 rs2_stream find_stream_to_align(const std::vector<rs2::stream_profile>& streams);
+template <typename T>
+void frame_to_arr(rs2::video_frame frame, std::vector<T> &arr, int n_channels = 1);
 
-const char* image_window = "Source Image";
-const char* depth_window = "depth_window";
-bool show_imgs = true;
-
-high_resolution_clock::time_point t_frame1;
+    high_resolution_clock::time_point t_frame1;
 high_resolution_clock::time_point t_frame2;
-
 
 int main(int argc, char *argv[])try
 {
@@ -106,13 +100,6 @@ int main(int argc, char *argv[])try
   node_obj.param<float>("/max_dist", max_dist, 1.4);
   node_obj.param<float>("/min_dist", min_dist, 0.1);
 
-  if (show_imgs)
-  {
-    namedWindow(image_window, WINDOW_AUTOSIZE);
-    namedWindow(depth_window, WINDOW_NORMAL);
-    resizeWindow(depth_window, depth_width,depth_height);
-  }
-
   // Filters
   rs2::decimation_filter dec;
   rs2::spatial_filter spat;
@@ -162,16 +149,16 @@ int main(int argc, char *argv[])try
   };
 
   if(enable_depth){
-  // Enable default depth stream.
-  cfg.enable_stream(RS2_STREAM_DEPTH,depth_width, depth_height,RS2_FORMAT_Z16, depth_fps);
+    // Enable default depth stream.
+    cfg.enable_stream(RS2_STREAM_DEPTH,depth_width, depth_height,RS2_FORMAT_Z16, depth_fps);
   }
   if(enable_color){
-  // Enable RGB steam.
-  cfg.enable_stream(RS2_STREAM_COLOR,color_width, color_height,RS2_FORMAT_RGB8, color_fps);
+    // Enable RGB steam.
+    cfg.enable_stream(RS2_STREAM_COLOR,color_width, color_height,RS2_FORMAT_RGB8, color_fps);
   }
   if(enable_ir){
-  // Enable Infrared_1 stream (This is hardware aligned with the depth).
-  cfg.enable_stream(RS2_STREAM_INFRARED, 1, ir_width, ir_height, RS2_FORMAT_Y8, ir_fps);
+    // Enable Infrared_1 stream (This is hardware aligned with the depth).
+    cfg.enable_stream(RS2_STREAM_INFRARED, 1, ir_width, ir_height, RS2_FORMAT_Y8, ir_fps);
   }
 
   auto profile = pipe.start(cfg,callback);
@@ -179,7 +166,7 @@ int main(int argc, char *argv[])try
   //aligning of the color and depth streams
   rs2_stream align_to = RS2_STREAM_ANY;
   if(align_depth){
-  align_to = find_stream_to_align(profile.get_streams());
+    align_to = find_stream_to_align(profile.get_streams());
   }
   rs2::align align(align_to);
 
@@ -249,7 +236,6 @@ int main(int argc, char *argv[])try
   // Define 1D arrays that will be published (An easier & faster way to publish images)
   std::vector<double_t> depth_arr;
   std::vector<uint8_t> bgr_arr, ir_arr;
-  Mat color_img, depth_in_meters, ir_img, depth_img;
   rs2_intrinsics intr;
 
   while (ros::ok())
@@ -272,10 +258,8 @@ int main(int argc, char *argv[])try
       // Get each stream frame from current_frameset.
       if(enable_color){
         auto color_frame = current_frameset.get_color_frame();
-        // Convert the frames from rs2::video_frame to opencv::Mat to be able to use it with opencv.
-        color_img = frame_to_mat(color_frame).clone();
         // Store the images' data in the 1D arrays (The data types should be as in the msg definition).
-        mat_to_arr<uint8_t>(color_img, bgr_arr); // uint8 in msg definition.
+        frame_to_arr<uint8_t>(color_frame, bgr_arr, 3); // uint8 in msg definition.
         // store the data to be puuclished in the img_stream_msg messege holder.
         img_stream_msg.bgr = bgr_arr;
         img_stream_msg.color_width = color_width;
@@ -284,17 +268,14 @@ int main(int argc, char *argv[])try
 
       if(enable_depth){
         auto depth_frame = current_frameset.get_depth_frame();
-        // Convert the frames from rs2::video_frame to opencv::Mat to be able to use it with opencv.
-        depth_in_meters = depth_frame_to_meters(depth_frame).clone();
-        depth_img = frame_to_mat(depth_frame.apply_filter(c)).clone();
         // Store the images' data in the 1D arrays (The data types should be as in the msg definition).
-        mat_to_arr<double_t>(depth_in_meters, depth_arr); // float64 in msg definition.
+        frame_to_arr<double_t>(depth_frame, depth_arr); // float64 in msg definition.
         // Get the intrinsics of the camera to be published (Used to get 3d distance from pixels).
         intr = depth_frame.get_profile().as<rs2::video_stream_profile>().get_intrinsics();
         // store the data to be puuclished in the img_stream_msg messege holder.
         img_stream_msg.time_stamp = depth_frame.get_timestamp();
         img_stream_msg.depth = depth_arr;
-        img_stream_msg.depth_scale = depth_scale;
+        img_stream_msg.depth_scale = depth_scale * depth_frame.get_units();
         img_stream_msg.depth_width = intr.width;
         img_stream_msg.depth_height = intr.height;
         img_stream_msg.ppx = intr.ppx;
@@ -307,30 +288,18 @@ int main(int argc, char *argv[])try
 
       if(enable_ir){
         auto ir_frame = current_frameset.get_infrared_frame();
-        // Convert the frames from rs2::video_frame to opencv::Mat to be able to use it with opencv.
-        ir_img = frame_to_mat(ir_frame).clone();
         // Store the images' data in the 1D arrays (The data types should be as in the msg definition).
-        mat_to_arr<uint8_t>(ir_img, ir_arr); // uint8 in msg definition.
+        frame_to_arr<uint8_t>(ir_frame, ir_arr); // uint8 in msg definition.
         // store the data to be puuclished in the img_stream_msg messege holder.
-        img_stream_msg.bgr = ir_arr;
+        img_stream_msg.ir = ir_arr;
         img_stream_msg.ir_width = ir_width;
         img_stream_msg.ir_height = ir_height;
       }   
 
       // Publish the img_stream_msg.
       img_stream_pub.publish(img_stream_msg);
-
-      // Show stream images if needed.
-      if(show_imgs)
-      {
-        cvtColor(depth_img, depth_img, COLOR_RGB2BGR);    
-        imshow(image_window,color_img);
-        imshow(depth_window, depth_img);
-        if (waitKey(10) >= 0) break;
-      }
     }
   }
-  destroyAllWindows();
   pipe.stop();
   alive = false;
   video_processing_thread.join();
@@ -396,4 +365,12 @@ rs2_stream find_stream_to_align(const std::vector<rs2::stream_profile>& streams)
         throw std::runtime_error("No stream found to align with Depth");
 
     return align_to;
+}
+
+
+template <typename T>
+void frame_to_arr(rs2::video_frame frame, std::vector<T> &arr, int n_channels)
+{
+  int pixels_per_channel = frame.get_height() + frame.get_width();
+  arr.assign((T *)frame.get_data(), (T *)frame.get_data() + pixels_per_channel * n_channels);
 }

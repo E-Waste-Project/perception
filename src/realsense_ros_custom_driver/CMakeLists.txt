@@ -10,7 +10,6 @@ add_compile_options(-std=c++11)
 find_package(catkin REQUIRED)
 
 set(CMAKE_BUILD_TYPE Debug)
-find_package(OpenCV 4 REQUIRED  PATHS "/usr/local" NO_DEFAULT_PATH)
 
 find_package(catkin REQUIRED COMPONENTS
 	roscpp
@@ -20,16 +19,9 @@ find_package(catkin REQUIRED COMPONENTS
 	message_runtime
 )
 
-
-find_package(OpenGL)
-if(NOT OPENGL_FOUND)
-	  message(FATAL_ERROR "\n\n OpenGL package is missing!\n\n")
-endif()
-
 include_directories(
 	include
 	${catkin_INCLUDE_DIRS}
-	${OpenCV_INCLUDE_DIRS}
   )
 
 add_message_files(
@@ -40,33 +32,6 @@ generate_messages(
   std_msgs
 )
 
-set(DEPENDENCIES realsense2 ${OPENGL_LIBRARIES})
-
-if(WIN32)
-	  list(APPEND DEPENDENCIES glfw3)
-else()
-	  # Find glfw header
-		find_path(GLFW_INCLUDE_DIR NAMES GLFW/glfw3.h
-			  PATHS /usr/X11R6/include
-				      /usr/include/X11
-							/opt/graphics/OpenGL/include
-							/opt/graphics/OpenGL/contrib/libglfw
-							/usr/local/include
-							/usr/include/GL
-							/usr/include
-							)
-						# Find glfw library
-		find_library(GLFW_LIBRARIES NAMES glfw glfw3
-			      PATHS /usr/lib64
-						      /usr/lib
-									/usr/lib/${CMAKE_LIBRARY_ARCHITECTURE}
-									/usr/local/lib64
-									/usr/local/lib
-									/usr/local/lib/${CMAKE_LIBRARY_ARCHITECTURE}
-									/usr/X11R6/lib
-									)
-endif()
-
 find_package(realsense2)
 if(NOT realsense2_FOUND)
 	  message(FATAL_ERROR "\n\n Intel RealSense SDK 2.0 is missing, please install it from https://github.com/IntelRealSense/librealsense/releases\n\n")
@@ -74,7 +39,7 @@ endif()
 
 catkin_package(
   CATKIN_DEPENDS message_runtime std_msgs roscpp
-  DEPENDS OpenCV realsense2
+  DEPENDS realsense2
   LIBRARIES ${PROJECT_NAME}
 )
 
@@ -84,9 +49,6 @@ target_link_libraries(stream_publisher
 	${catkin_LIBRARIES}
 	${CMAKE_THREAD_LIBS_INIT}
 	realsense2
-	${OPENGL_LIBRARIES}
-	${OpenCV_LIBS}
-	glfw
 )
 
 add_library(${PROJECT_NAME}
