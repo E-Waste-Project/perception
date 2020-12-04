@@ -37,12 +37,12 @@ int main(int argc, char *argv[])try
   //ROS specifics:
   //----------------
   //Initializing ROS node with name stream_publisher.
-  ros::init(argc, argv,"stream_publisher");
+  string node_name = "stream_publisher";
+  ros::init(argc, argv, node_name);
   //Created a nodehandle object
   ros::NodeHandle node_obj;
   //Define a publisher for image streams.
   ros::Publisher img_stream_pub = node_obj.advertise<realsense_ros_custom_driver::img_stream>("/img_stream", 10);
-
 
   //camera variables:
   //-------------------
@@ -55,26 +55,26 @@ int main(int argc, char *argv[])try
   int ir_width, ir_height;
 
   // <!--depth stream-->
-  node_obj.param<bool>("/enable_depth", enable_depth, true);
-  node_obj.param<int>("/depth_fps", depth_fps, 30);
-  node_obj.param<int>("/depth_width", depth_width, 1280);
-  node_obj.param<int>("/depth_height", depth_height, 720);
-  
+  node_obj.param<bool>("/" + node_name + "/enable_depth", enable_depth, false);
+  node_obj.param<int>("/" + node_name + "/depth_fps", depth_fps, 30);
+  node_obj.param<int>("/" + node_name + "/depth_width", depth_width, 1280);
+  node_obj.param<int>("/" + node_name + "/depth_height", depth_height, 720);
+
   // <!--color stream-->
-  node_obj.param<bool>("/enable_color", enable_color, true);
-  node_obj.param<int>("/color_fps", color_fps, 30);
-  node_obj.param<int>("/color_width", color_width, 1280);
-  node_obj.param<int>("/color_height", color_height, 720);
+  node_obj.param<bool>("/" + node_name + "/enable_color", enable_color, true);
+  node_obj.param<int>("/" + node_name + "/color_fps", color_fps, 30);
+  node_obj.param<int>("/" + node_name + "/color_width", color_width, 1280);
+  node_obj.param<int>("/" + node_name + "/color_height", color_height, 720);
 
   // <!--infrared stream-->
-  node_obj.param<bool>("/enable_ir", enable_ir, true);
-  node_obj.param<int>("/ir_fps", ir_fps, 30);
-  node_obj.param<int>("/ir_width", ir_width, 1280);
-  node_obj.param<int>("/ir_width", ir_width, 720);
-  
+  node_obj.param<bool>("/" + node_name + "/enable_ir", enable_ir, true);
+  node_obj.param<int>("/" + node_name + "/ir_fps", ir_fps, 30);
+  node_obj.param<int>("/" + node_name + "/ir_width", ir_width, 1280);
+  node_obj.param<int>("/" + node_name + "/ir_width", ir_width, 720);
+
   // <!--align_depth-->
-  node_obj.param<bool>("/align_depth", align_depth, true);
-  
+  node_obj.param<bool>("/" + node_name + "/align_depth", align_depth, true);
+
   //Filters' Parameters
   bool enable_temporal_filter, enable_decimation_filter;
   bool enable_spatial_filter, enable_threshold_filter;
@@ -82,23 +82,23 @@ int main(int argc, char *argv[])try
   int delta, temporal_holes_fill, dec_value, spatial_holes_fill;
 
   // <!--temporal filter-->
-  node_obj.param<bool>("/enable_temporal_filter", enable_temporal_filter, true);
-  node_obj.param<float>("/alpha", alpha, 0.2);
-  node_obj.param<int>("/delta", delta, 100);
-  node_obj.param<int>("/temporal_holes_fill", temporal_holes_fill, 7); // <!--range is [0 => 8]-->
+  node_obj.param<bool>("/" + node_name + "/enable_temporal_filter", enable_temporal_filter, true);
+  node_obj.param<float>("/" + node_name + "/alpha", alpha, 0.2);
+  node_obj.param<int>("/" + node_name + "/delta", delta, 100);
+  node_obj.param<int>("/" + node_name + "/temporal_holes_fill", temporal_holes_fill, 7); // <!--range is [0 => 8]-->
 
   // <!--decimation filter-->
-  node_obj.param<bool>("/enable_decimation_filter", enable_decimation_filter, false);
-  node_obj.param<int>("/dec_value", dec_value, 3);
+  node_obj.param<bool>("/" + node_name + "/enable_decimation_filter", enable_decimation_filter, false);
+  node_obj.param<int>("/" + node_name + "/dec_value", dec_value, 3);
 
   // <!--spatial filter-->
-  node_obj.param<bool>("/enable_spatial_filter", enable_spatial_filter, false);
-  node_obj.param<int>("/spatial_holes_fill", spatial_holes_fill, 5); // <!--range is [0 => 8]-->
+  node_obj.param<bool>("/" + node_name + "/enable_spatial_filter", enable_spatial_filter, false);
+  node_obj.param<int>("/" + node_name + "/spatial_holes_fill", spatial_holes_fill, 5); // <!--range is [0 => 8]-->
 
   // <!--threshold filter-->
-  node_obj.param<bool>("/enable_threshold_filter", enable_threshold_filter, false);
-  node_obj.param<float>("/max_dist", max_dist, 1.4);
-  node_obj.param<float>("/min_dist", min_dist, 0.1);
+  node_obj.param<bool>("/" + node_name + "/enable_threshold_filter", enable_threshold_filter, false);
+  node_obj.param<float>("/" + node_name + "/max_dist", max_dist, 1.4);
+  node_obj.param<float>("/" + node_name + "/min_dist", min_dist, 0.1);
 
   // Filters
   rs2::decimation_filter dec;

@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <launch>
-    <node pkg="realsense_ros_custom_driver" type="stream_publisher" name="stream_publisher">
+    <node pkg="realsense_ros_custom_driver" type="stream_publisher" name="stream_publisher" output="screen">
         
         <!--================== STREAMS =======================-->
 
