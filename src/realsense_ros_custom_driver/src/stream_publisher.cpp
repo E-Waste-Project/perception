@@ -29,7 +29,7 @@ rs2_stream find_stream_to_align(const std::vector<rs2::stream_profile>& streams)
 template <typename T>
 void frame_to_arr(rs2::video_frame frame, std::vector<T> &arr, int n_channels = 1);
 
-    high_resolution_clock::time_point t_frame1;
+high_resolution_clock::time_point t_frame1;
 high_resolution_clock::time_point t_frame2;
 
 int main(int argc, char *argv[])try
