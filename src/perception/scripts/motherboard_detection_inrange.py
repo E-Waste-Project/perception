@@ -5,10 +5,10 @@ import numpy as np
 from bisect import bisect_right, bisect_left
 from perception.laptop_perception_helpers import read_and_resize, enclosing_rect_area
 
-data_dir = "/home/ubuntu/e_waste/database/motherboard/"
-dset_sz = 3
+data_dir = "/home/ubuntu/data/laptop_motherboard/"
+dset_sz = 10
 image_id = 1
-original_img = read_and_resize(data_dir, image_id, compression='.jpg')
+original_img = read_and_resize(data_dir, image_id, compression='')
 img = original_img.copy()
 gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
@@ -26,20 +26,20 @@ if(color == 'b'):
     low_S = 73
     low_V = 63
 else:
-    low_H = 25
-    low_S = 59
-    low_V = 45
-high_H = 255
+    low_H = 44
+    low_S = 26
+    low_V = 80
+high_H = 100
 high_S = 255
 high_V = 255
-min_len = 138000
+min_len = 70000
 max_len = 200000
 # min_circ = 76
 use_canny = False
 thresh1 = 34
 thresh2 = 0
-morph_kernel = 3
-k = 21
+morph_kernel = 0
+k = 49
 c = 2
 
 cv2.createTrackbar('low_H', 'image_window', low_H, 255, lambda x: None)
@@ -116,17 +116,19 @@ while True:
     # ret, output = cv2.threshold(output, thresh, 255, cv2.THRESH_BINARY_INV)
     # output = cv2.adaptiveThreshold(output, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, \
                             #    cv2.THRESH_BINARY_INV, 11, 2)
+    
+    output = cv2.inRange(output, (low_H, low_S, low_V), (high_H, high_S, high_V))
 
     if use_canny:
         output = cv2.Canny(output, thresh1, thresh2)
 
     # kernel = np.ones((2, 2), np.uint8)
-    # kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (morph_kernel, morph_kernel))
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (morph_kernel, morph_kernel))
     # Use erosion and dilation combination to eliminate false positives.
     # output = cv2.dilate(output, kernel, iterations=1)
     # output = cv2.erode(output, kernel, iterations=1)
 
-    # output = cv2.morphologyEx(output, cv2.MORPH_CLOSE, kernel, iterations=1)
+    output = cv2.morphologyEx(output, cv2.MORPH_OPEN, kernel, iterations=1)
 
     # ========================================================= #
 
@@ -135,10 +137,19 @@ while True:
     #############################
 
     # output2 = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    output = cv2.inRange(output, (low_H, low_S, low_V), (high_H, high_S, high_V))
-    img = img.reshape((-1, 3))
-    img[output.flatten() == 0] = [0, 0, 0]
-    img = img.reshape(original_img.shape)
+    # img = img.reshape((-1, 3))
+    # img[output.flatten() == 0] = [0, 0, 0]
+    # img = img.reshape(original_img.shape)
+
+    contours, hierarchy = cv2.findContours(output, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+
+    contours = sorted(contours, key=enclosing_rect_area)
+    contours_per = list(map(enclosing_rect_area, contours))
+    start = bisect_left(contours_per, min_len)
+    end = bisect_right(contours_per, max_len)
+    contours = contours[start:end+1]
+
+    cv2.drawContours(img, contours, -1, (0, 255, 0), 3)
 
     # ========================================================= #
 
@@ -153,7 +164,7 @@ while True:
     elif key == ord('c'):
         image_id += 1
         if image_id <= dset_sz:
-            original_img = read_and_resize(data_dir, image_id, compression='.jpg')
+            original_img = read_and_resize(data_dir, image_id, compression='')
             img = original_img.copy()
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         else:
