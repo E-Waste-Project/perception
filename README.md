@@ -1,26 +1,24 @@
-# realsense_ros_custom_driver
-A simple and fast driver for using Intel Realsense D400 series cameras with ROS and OpenCV.
+# Disassembly-Perception
+Perception tasks needed for robots to disassemble laptops.
 
 ## Dependencies
 ```
-ros >= kinetic
-realsense2
+Python >= 3
+OpenCV >= 4
+ros kinetic/melodic
 ```
 
 ## Installation
 ```shell
 $ cd ~
-$ git clone https://github.com/E-waste-Project/realsense-ros-custom-driver.git
-$ cp -r realsense-ros-custom-driver/src/ ~/your_catkin_ws/src/
-$ sudo rm -r realsense-ros-custom-driver
-$ cd ~/your_catkin_ws
-$ catkin build
+$ git clone https://github.com/E-Waste-Project/Disassembly-Perception.git
+$ cp -r Disassembly-Perception/src/ your_catkin_ws/src/
+$ sudo rm -r Disassembly-Perception
+$ cd your_catkin_ws && catkin build perception
 ```
 
-## Sample Usage
-If needed change parameter values in the stream_publisher.launch launch file in realsense_ros_custom_driver/launch folder.
-
-Open a terminal and launch the stream_publisher.launch file:
-```shell
-$ roslaunch realsense_ros_custom_driver stream_publisher.launch
+## Usage
+To run any of the scripts, simply rosrun it.
+```
+$ rosrun perception script_name.py
 ```
