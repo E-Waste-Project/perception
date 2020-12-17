@@ -288,16 +288,26 @@ class CocoDataset():
                 self.segmentations[image_id] = []
             self.segmentations[image_id].append(segmentation)
 
-    def get_labels(self, width=None, height=None):
+    def get_labels(self, width=None, height=None, format=('x1', 'y1', 'w', 'h'), relative=False):
+        format_dict = {'x1': lambda x: x[0], 'x2': lambda x: x[0] + x[2], 'y1': lambda x: x[1],
+                        'y2': lambda x: x[1] + x[3], 'w': lambda x: x[2], 'h': lambda x: x[3]}
         all_imgs_labels = {}
+        if ((width is not None) or (height is not None)) and relative:
+            raise ValueError(
+                "Can't be relative and have certain width or height")
+
         for img_id in self.segmentations.keys():
-            all_imgs_labels[img_id] = {}
-            img_labels = all_imgs_labels[img_id]
+            img_name = self.images[img_id]['file_name']
+            all_imgs_labels[img_name] = {}
+            img_labels = all_imgs_labels[img_name]
             width_ratio, height_ratio = 1.0, 1.0
             if width is not None:
                 width_ratio = width / self.images[img_id]['width']
             if height is not None:
                 height_ratio = height / self.images[img_id]['height']
+            if relative:
+                width_ratio /= self.images[img_id]['width']
+                height_ratio /= self.images[img_id]['height']
             for segm in self.segmentations[img_id]:
                 cat_name = self.categories[segm['category_id']]['name']
                 bbox = segm['bbox'].copy()
@@ -307,20 +317,22 @@ class CocoDataset():
                 bbox[2] *= width_ratio
                 bbox[1] *= height_ratio
                 bbox[3] *= height_ratio
-                img_labels[cat_name].append(bbox)
+                new_bbox = [format_dict[element]
+                            (bbox) for element in format]
+                img_labels[cat_name].append(new_bbox)
         return all_imgs_labels
-
 
 
 if __name__ == "__main__":
 
-    annotation_path = '/home/ubuntu/data/laptop_components/train/laptop_components.json'
-    image_dir = '/home/ubuntu/data/laptop_components/train'
+    import collections
+
+    annotation_path = '/home/abdelrhman/data/laptop_components/train2/laptop_components.json'
+    image_dir = '/home/abdelrhman/data/laptop_components/train1'
 
     coco_dataset = CocoDataset(annotation_path, image_dir)
-    # coco_dataset.display_info()
-    # coco_dataset.display_licenses()
-    coco_dataset.display_categories()
-    print(coco_dataset.get_labels(width=650))
-    # html = coco_dataset.display_image(1)
-    # IPython.display.HTML(html)
+    all_imgs_labels = coco_dataset.get_labels(
+        format=('y1', 'x1', 'y2', 'x2'), relative=True)
+    all_imgs_labels = collections.OrderedDict(
+        sorted(all_imgs_labels.items(), key=lambda x: int(x[0][:-4])))
+    print(all_imgs_labels.keys())
