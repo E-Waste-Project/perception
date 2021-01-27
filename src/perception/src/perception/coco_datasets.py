@@ -10,6 +10,7 @@ from io import BytesIO
 from math import trunc
 from PIL import Image as PILImage
 from PIL import ImageDraw as PILImageDraw
+import collections
 
 # Load the dataset json
 
@@ -290,7 +291,8 @@ class CocoDataset():
 
     def get_labels(self, width=None, height=None, format=('x1', 'y1', 'w', 'h'), relative=False):
         format_dict = {'x1': lambda x: x[0], 'x2': lambda x: x[0] + x[2], 'y1': lambda x: x[1],
-                        'y2': lambda x: x[1] + x[3], 'w': lambda x: x[2], 'h': lambda x: x[3]}
+                       'y2': lambda x: x[1] + x[3], 'w': lambda x: x[2], 'h': lambda x: x[3],
+                       'xc': lambda x: x[0] + x[2] / 2.0, 'yc': lambda x: x[1] + x[3] / 2.0}
         all_imgs_labels = {}
         if ((width is not None) or (height is not None)) and relative:
             raise ValueError(
@@ -320,8 +322,62 @@ class CocoDataset():
                 new_bbox = [format_dict[element]
                             (bbox) for element in format]
                 img_labels[cat_name].append(new_bbox)
-        return all_imgs_labels
+        self.all_imgs_labels = dict(collections.OrderedDict(sorted(all_imgs_labels.items(), key=lambda x: int(x[0][:-4]))))
+        return self.all_imgs_labels
+        
+    def write_labels_to_file(self,
+                             directory,
+                             separator=' ',
+                             add_class_name=True,
+                             add_class_id=False,
+                             add_conf=False):
+        
+        classes_ids = { val['name']: val['id'] - 1 for val in  self.categories.values()}
+        # Convert to string and adjust box format.
+        for img_name, img in self.all_imgs_labels.items():
+            formated_string_labels = []
+            for c in img:
+                for box in img[c]:
+                    string = c + separator if add_class_name else ""
+                    string += str(classes_ids[c]) + separator if add_class_id else ""
+                    string += str(box[-1]) + separator if add_conf else ""
+                    string += str(box[0])
+                    for x in box[1:4]:
+                        string += separator + str(x)
+                    string += "\n"
+                    formated_string_labels.append(string)
+            # Writing data to a file.
+            with open(directory + img_name[:-3] + "txt", "w") as file: 
+                file.writelines(formated_string_labels)
+                
+    def read_labels_from_files(self, directory, has_conf=True, add_conf=False, box_formatter=lambda x: x):
+        classes_names = {val['id'] - 1: val['name'] for val in self.categories.values()}
+        all_imgs_labels = {}
+        for filename in os.listdir(directory):
+            if not filename.endswith(".txt"):
+                continue
+            imgname = filename.replace('.txt', '.jpg')
+            # first get all lines from file
+            with open(directory + filename, 'r') as f:
+                lines = f.readlines()
 
+            # remove spaces
+            img_labels = {}
+            for line in lines:
+                label = line.replace('\n', '').split(sep=' ')
+                cname = classes_names[int(label[0])]
+                if cname not in img_labels:
+                    img_labels[cname] = []
+                if has_conf:
+                    img_labels[cname].append(box_formatter(label[1:-1]))
+                    if add_conf:
+                        img_labels[cname][-1].append(float(label[-1]))
+                else:
+                    img_labels[cname].append(box_formatter(label[1:]))
+            all_imgs_labels[imgname] = img_labels
+        self.all_imgs_labels = dict(collections.OrderedDict(
+            sorted(all_imgs_labels.items(), key=lambda x: int(x[0][:-4]))))
+        return self.all_imgs_labels
 
 if __name__ == "__main__":
 
