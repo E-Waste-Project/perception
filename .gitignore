@@ -3,8 +3,5 @@
 build
 devel
 logs
-<<<<<<< HEAD
-=======
 __pycache__
 .pyc*
->>>>>>> bd158f1ea4d1f59cbe6eb49bdfce4a8f823113d9
