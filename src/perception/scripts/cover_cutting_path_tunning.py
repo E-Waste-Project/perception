@@ -1,10 +1,14 @@
 #!/usr/bin/env python
 
+import sys
+
+sys.path.remove('/opt/ros/kinetic/lib/python2.7/dist-packages')
+
 import cv2
 import numpy as np
 from perception.laptop_perception_helpers import plan_cover_cutting_path, read_and_resize
 
-data_dir = "/home/ubuntu/data/laptop_base/"
+data_dir = "/home/abdelrhman/data/laptop_base/"
 dset_sz = 34
 image_id = 1
 original_img = read_and_resize(data_dir, image_id)
@@ -44,12 +48,16 @@ while True:
     # Plan Cover Cutting Path given a gray image, tolerance, and minimum hole distance.#
     ####################################################################################
 
-    rect_path = plan_cover_cutting_path(gray, tol, min_hole_dist, draw_on=img)
+    cut_path = plan_cover_cutting_path(gray, tol, min_hole_dist, draw_on=img, method=1)
+    for i in range(len(cut_path) - 1):
+        cv2.line(img, cut_path[i], cut_path[i+1], (0, 0, 255), 2)
+    # print(len(cut_path))
+    
 
     # ======================================================================== #
 
     cv2.imshow("image_window", img)
-    key = cv2.waitKey(20) & 0xFF
+    key = cv2.waitKey(0) & 0xFF
 
     if key == ord('e'):
         break
