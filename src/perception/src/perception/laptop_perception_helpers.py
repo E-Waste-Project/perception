@@ -283,8 +283,11 @@ def custom_path_method(holes_coords, left_edge, right_edge, upper_edge, lower_ed
     prev_edges_points_num = 1
     # Remove holes that are outside the cutting path rectangular area.
 
-    def vertical_condition(coord): return (upper_edge <= coord.y <= lower_edge)
-    def horizontal_condition(coord): return (left_edge <= coord.x <= right_edge)
+    def vertical_condition(coord): return (
+        upper_edge <= coord.y <= lower_edge) or (upper_edge <= coord.y2 <= lower_edge)
+
+    def horizontal_condition(coord): return (
+        left_edge <= coord.x <= right_edge) or (left_edge <= coord.x2 <= right_edge)
 
     for edge in range(len(edges)):
         condition = horizontal_condition if horizontal[edge] else vertical_condition
