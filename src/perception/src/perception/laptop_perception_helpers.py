@@ -281,10 +281,18 @@ def custom_path_method(holes_coords, left_edge, right_edge, upper_edge, lower_ed
     x_indicies = (0, 1, 1, 0)
     y_indicies = (0, 0, 1, 1)
     prev_edges_points_num = 1
+    # Remove holes that are outside the cutting path rectangular area.
+
+    def vertical_condition(coord): return (upper_edge <= coord.y <= lower_edge)
+    def horizontal_condition(coord): return (left_edge <= coord.x <= right_edge)
+
     for edge in range(len(edges)):
+        condition = horizontal_condition if horizontal[edge] else vertical_condition
+        filtered_holes_coords = list(filter(condition, holes_coords))
+
         # Find holes that has its edge near edge of contour by at most min_hole_dist.
         holes_near_edge = list(filter(lambda hole: abs(
-            ref_coord_fns[edge](hole) - edges[edge]) < min_hole_dist, holes_coords))
+            ref_coord_fns[edge](hole) - edges[edge]) < min_hole_dist, filtered_holes_coords))
 
         # Sort holes according to edge so that path moves down->right->up->left.
         # for left_edge->lower_edge->right_edge->upper_edge.
@@ -295,7 +303,8 @@ def custom_path_method(holes_coords, left_edge, right_edge, upper_edge, lower_ed
         for hole in holes_near_edge:
             x, y, x2, y2 = hole.x, hole.y, hole.x2, hole.y2
             if reverse[edge]:
-                x, x2, y, y2, dir = x2, x, y2, y, dir * -1
+                x, x2, y, y2 = x2, x, y2, y
+                dir = -1
 
             if horizontal[edge]:
                 points_x = (x - dir * min_hole_dist, x2 + dir * min_hole_dist)
@@ -365,7 +374,7 @@ def plan_cover_cutting_path(input_img=None, tol=30, min_hole_dist=10, draw_on=No
         # Draw the laptop bounding box in blue
         laptop_coords.draw_on(draw_on, 'b')
         # Draw the initial cutting path in green.
-        cut_rect.draw_on(draw_on)
+        # cut_rect.draw_on(draw_on)
 
     if holes_coords is not None:
 
@@ -385,7 +394,8 @@ def plan_cover_cutting_path(input_img=None, tol=30, min_hole_dist=10, draw_on=No
 
         if draw_on is not None:
             # Draw the final cutting path in red.
-            cut_rect.draw_on(draw_on, 'r')
+            # cut_rect.draw_on(draw_on, 'r')
+            pass
 
         # cropped_img = cut_rect.crop_img(original_img)
         # cropped_gray = cut_rect.crop_img(gray)
