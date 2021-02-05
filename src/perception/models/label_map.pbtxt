@@ -1,0 +1,60 @@
+item {
+    id: 1
+    name: 'Battery'
+}
+
+item {
+    id: 2
+    name: 'Connector'
+}
+
+item {
+    id: 3
+    name: 'CPU'
+}
+
+item {
+    id: 4
+    name: 'Fan'
+}
+
+item {
+    id: 5
+    name: 'Hard Disk'
+}
+
+item {
+    id: 6
+    name: 'Motherboard'
+}
+
+item {
+    id: 7
+    name: 'RAM'
+}
+
+item {
+    id: 8
+    name: 'Screw'
+}
+
+item {
+    id: 9
+    name: 'SSD'
+}
+
+item {
+    id: 10
+    name: 'WLAN'
+}
+
+item {
+    id: 11
+    name: 'CD-ROM'
+}
+
+item {
+    id: 12
+    name: 'Laptop_Back_Cover'
+}
+

@@ -1,0 +1,18 @@
+camera: {
+  realsense2_camera: {
+
+    depth_width: 1280,
+    depth_height: 720,
+
+    color_width:     1280,
+    color_height:    720,
+
+    depth_fps:       6,
+    color_fps:       6,
+
+    filters: 
+      "pointcloud,temporal,disparity,spatial",
+    align_depth:           true
+  }
+
+}
