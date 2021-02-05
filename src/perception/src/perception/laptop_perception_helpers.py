@@ -1,8 +1,7 @@
 import cv2
 import numpy as np
 from bisect import bisect_right, bisect_left
-
-from numpy.lib.function_base import select
+from copy import deepcopy
 
 
 class Rect:
@@ -33,6 +32,9 @@ class Rect:
     
     def add(self, rect):
         self.shift_by(rect.x, rect.y)
+
+    def rect_to_path(self):
+        return [(self.x, self.y), (self.x, self.y2), (self.x2, self.y), (self.x2, self.y2), (self.x, self.y)]
 
 
 def nothing(x):
@@ -155,10 +157,165 @@ def detect_holes(input_img, draw_on=None):
         return rect_params_list
     else:
         return None
-    
 
-def plan_cover_cutting_path(input_img, tol=30, min_hole_dist=10, draw_on=None):
-    """Takes gray_scale img containing a laptop, returns rect values of cutting path.
+
+def rectangular_path_method(holes_coords, left_edge, right_edge, upper_edge, lower_edge, min_hole_dist):
+
+    # Sort the holes according to the coordinates of their right edge.
+    x_sorted_holes_coords = sorted(holes_coords, key=lambda coord: coord.x2)
+
+    # Remove holes that are outside the cutting path rectangular area.
+    x_sorted_holes_coords = list(filter(lambda coord: upper_edge <= coord.y <= lower_edge,
+                                        x_sorted_holes_coords))
+
+    # Get right edge coordinates of holes.
+    sorted_x_values = list(map(lambda coord: coord.x2, x_sorted_holes_coords))
+
+    # Adjust the cutting rectangle left edge position,
+    # to be at least far from nearest hole right edge by min_hole_dist.
+    while len(sorted_x_values) > 0:
+        left_edge_nearest_hole_idx = min(bisect_left(
+            sorted_x_values, left_edge), len(sorted_x_values)-1)
+        hole = x_sorted_holes_coords[left_edge_nearest_hole_idx]
+        x = hole.x
+        y = hole.y
+        x2 = hole.x2
+        y2 = hole.y2
+        if abs(x - left_edge) < min_hole_dist and upper_edge <= y <= lower_edge:
+            left_edge = x2 + min_hole_dist
+        else:
+            break
+
+    # Get left edge coordinates of holes.
+    sorted_x_values = list(
+        map(lambda coord: coord.x, x_sorted_holes_coords))
+
+    # Adjust the cutting rectangle right edge position,
+    # to be at least far from nearest hole left edge by min_hole_dist.
+    while len(sorted_x_values) > 0:
+        right_edge_nearest_hole_idx = max(
+            0, bisect_right(sorted_x_values, right_edge) - 1)
+        x = x_sorted_holes_coords[right_edge_nearest_hole_idx].x
+        y = x_sorted_holes_coords[right_edge_nearest_hole_idx].y
+        if abs(x - right_edge) < min_hole_dist and upper_edge <= y <= lower_edge:
+            right_edge = x - min_hole_dist
+        else:
+            break
+
+    # Sort the holes according to the coordinates of their lower edge.
+    y_sorted_holes_coords = sorted(
+        holes_coords, key=lambda coord: coord.y2)
+
+    # Remove holes that are outside the cutting path rectangular area.
+    y_sorted_holes_coords = list(filter(lambda coord: left_edge <= coord.x <= right_edge,
+                                        y_sorted_holes_coords))
+    # Get lower edge coordinates of holes.
+    sorted_y_values = list(
+        map(lambda coord: coord.y2, y_sorted_holes_coords))
+
+    # Adjust the cutting rectangle upper edge position,
+    # to be at least far from nearest hole lower edge by min_hole_dist.
+    while len(sorted_y_values) > 0:
+        upper_edge_nearest_hole_idx = min(bisect_left(
+            sorted_y_values, upper_edge), len(sorted_y_values)-1)
+        x = y_sorted_holes_coords[upper_edge_nearest_hole_idx].x
+        y = y_sorted_holes_coords[upper_edge_nearest_hole_idx].y
+        y2 = y_sorted_holes_coords[upper_edge_nearest_hole_idx].y2
+        if abs(y - upper_edge) < min_hole_dist and left_edge <= x <= right_edge:
+            upper_edge = y2 + min_hole_dist
+        else:
+            break
+
+    # Get upper edge coordinates of holes.
+    sorted_y_values = list(
+        map(lambda coord: coord.y, y_sorted_holes_coords))
+
+    # Adjust the cutting rectangle lower edge position,
+    # to be at least far from nearest hole upper edge by min_hole_dist.
+    while len(sorted_y_values) > 0:
+        lower_edge_nearest_hole_idx = bisect_right(
+            sorted_y_values, lower_edge) - 1
+        x = y_sorted_holes_coords[lower_edge_nearest_hole_idx].x
+        y = y_sorted_holes_coords[lower_edge_nearest_hole_idx].y
+        if abs(y - lower_edge) < min_hole_dist and left_edge <= x <= right_edge:
+            lower_edge = y - min_hole_dist
+        else:
+            break
+
+    cut_rect = Rect(left_edge, upper_edge, right_edge - \
+                    left_edge, lower_edge - upper_edge)
+    
+    return cut_rect
+
+# IMPROVEMENT:: Make it able to work properly when hole is at one of the contour corners,
+# Or make sure that the given contour doesn't have a hole in one of it's corners.
+def custom_path_method(holes_coords, left_edge, right_edge, upper_edge, lower_edge, min_hole_dist):
+    """Produce a cutting path that preserves overall edge location but when a hole is near an edge,
+    It avoids the gole by moving around it then returning to the edge location, and continue
+    moving along it.
+        
+    param min_hole_dist: should be > hole diameter
+    """
+    # Initialize cutting path.
+    cut_path = [(left_edge, upper_edge), (left_edge, lower_edge), 
+    (right_edge, lower_edge), (right_edge, upper_edge), (left_edge, upper_edge)]
+    
+    # Assuming we start from upper left corner and start going down then right.
+    # Then we reverse(i.e. move up then left)
+    reverse = (False, False, True, True)
+    horizontal = (False, True, False, True)
+
+    # This is the hole edge that we compare with each contour edge.
+    # Thus if it is the contour left edge we compare with hole right edge and so on.
+    # i.e. we compare with hole edge that is further from the contour edge inside contour area.
+    ref_coord_fns = (lambda h: h.x2, lambda h: h.y, lambda h: h.x, lambda h: h.y2)
+    edges = (left_edge, lower_edge, right_edge, upper_edge)
+
+    # 'dir' here is used as a multiplier for when we reverse motion,
+    # i.e. after moving down->right we move up->left
+    dir = 1
+    # These indicies indicate that for left_edge for example,
+    # when we move around the hole, we move in x direction (i.e. to the right),
+    # that's why x changes from 0 to 1 while y doesn't change, then move in y_direction,
+    # thus y changes from 0 to 1 while x remains constant and so on. 
+    x_indicies = (0, 1, 1, 0)
+    y_indicies = (0, 0, 1, 1)
+    prev_edges_points_num = 1
+    for edge in range(len(edges)):
+        # Find holes that has its edge near edge of contour by at most min_hole_dist.
+        holes_near_edge = list(filter(lambda hole: abs(
+            ref_coord_fns[edge](hole) - edges[edge]) < min_hole_dist, holes_coords))
+
+        # Sort holes according to edge so that path moves down->right->up->left.
+        # for left_edge->lower_edge->right_edge->upper_edge.
+        def sorting_coord_fn(hole): return hole.x if horizontal[edge] else hole.y
+        holes_near_edge.sort(key=sorting_coord_fn, reverse=reverse[edge])
+
+        # Adjust cutting path to avoid these holes by adding path points around these holes.
+        for hole in holes_near_edge:
+            x, y, x2, y2 = hole.x, hole.y, hole.x2, hole.y2
+            if reverse[edge]:
+                x, x2, y, y2, dir = x2, x, y2, y, dir * -1
+
+            if horizontal[edge]:
+                points_x = (x - dir * min_hole_dist, x2 + dir * min_hole_dist)
+                points_y = (edges[edge], y - dir * min_hole_dist)
+            else:
+                points_x = (edges[edge], x2 + dir * min_hole_dist)
+                points_y = (y - dir * min_hole_dist, y2 + dir * min_hole_dist)
+
+            for x_idx, y_idx in zip(x_indicies, y_indicies):
+                cut_path.insert(edge + prev_edges_points_num,(points_x[x_idx], points_y[y_idx]))
+                prev_edges_points_num += 1
+        x_indicies, y_indicies = y_indicies, x_indicies
+    
+    return cut_path
+
+
+def plan_cover_cutting_path(input_img=None, tol=30, min_hole_dist=10, draw_on=None,
+ laptop_coords=None, holes_coords=None, method=0):
+    """Takes gray_scale img containing a laptop Or takes laptop & holes coordinates,
+     returns cutting path points as list of tuples.
 
     param tol: Defines The Coordinates of The initial Bounding Box To Be Cut
      by taking a tolerance from laptop bounding box.
@@ -166,20 +323,35 @@ def plan_cover_cutting_path(input_img, tol=30, min_hole_dist=10, draw_on=None):
     param min_hole_dist: A minimum distance criteria between a hole and any edge
      in the cutting rectangle.
 
+    param laptop_coords: Detected laptop box values,
+     should be a tuble of 4 values x, y, width and height.
+
+    param holes_coords: Detected holes box values, 
+     should be a list of tubles of 4 values x, y, width and height.
+
     """
 
-    # Copy original image into 'gray'
-    gray = input_img.copy()
+    if input_img is not None:
+        # Copy original image into 'gray'
+        gray = input_img.copy()
 
-    # Detect Laptop Bounding Box Coordinates
-    laptop_coords = detect_laptop(gray)
+        # Detect Laptop Bounding Box Coordinates
+        laptop_coords = detect_laptop(gray)
 
-    # Crop The Image to The Laptop Bounding Box
-    cropped_gray = laptop_coords.crop_img(gray)                                                                                                        
+        # Crop The Image to The Laptop Bounding Box
+        cropped_gray = laptop_coords.crop_img(gray)                                                                                                        
 
-    # Detect The holes on The Cropped Image
-    holes_coords = detect_holes(cropped_gray)
+        # Detect The holes on The Cropped Image
+        holes_coords = detect_holes(cropped_gray)
+    elif laptop_coords is not None:
+        laptop_coords = Rect(*laptop_coords)
+        if holes_coords is not None:
+            holes_coords = [Rect(*hole) for hole in deepcopy(holes_coords)]
+    else:
+        raise ValueError(
+            "Either provide an input image or the laptop coordinates")
 
+    
     # Assign The Coordinates of The initial Bounding Box To Be Cut by taking a tolerance from laptop bounding box.
     cut_rect = Rect(laptop_coords.x + tol, laptop_coords.y + tol, laptop_coords.w - 2*tol, laptop_coords.h - 2*tol)    
 
@@ -203,78 +375,13 @@ def plan_cover_cutting_path(input_img, tol=30, min_hole_dist=10, draw_on=None):
             if draw_on is not None:
                 hole.draw_on(draw_on)
 
-        # Sort the holes according to the coordinates of their right edge.
-        x_sorted_holes_coords = sorted(holes_coords, key=lambda coord: coord.x2)
-
-        # Remove holes that are outside the cutting path rectangular area.
-        x_sorted_holes_coords = list(filter(lambda coord: upper_edge <= coord.y <= lower_edge,
-                                            x_sorted_holes_coords))
-
-        # Get right edge coordinates of holes.
-        sorted_x_values = list(map(lambda coord: coord.x2, x_sorted_holes_coords))
-
-        # Adjust the cutting rectangle left edge position,
-        # to be at least far from nearest hole right edge by min_hole_dist.
-        while len(sorted_x_values) > 0:
-            left_edge_nearest_hole_idx = min(bisect_left(sorted_x_values, left_edge), len(sorted_x_values)-1)
-            x = x_sorted_holes_coords[left_edge_nearest_hole_idx].x
-            y = x_sorted_holes_coords[left_edge_nearest_hole_idx].y
-            x2 = x_sorted_holes_coords[left_edge_nearest_hole_idx].x2
-            if abs(x - left_edge) < min_hole_dist and upper_edge <= y <= lower_edge:
-                left_edge = x2 + min_hole_dist
-            else:
-                break
-
-        # Get left edge coordinates of holes.
-        sorted_x_values = list(map(lambda coord: coord.x, x_sorted_holes_coords))
-
-        # Adjust the cutting rectangle right edge position,
-        # to be at least far from nearest hole left edge by min_hole_dist.
-        while len(sorted_x_values) > 0:
-            right_edge_nearest_hole_idx = max(0, bisect_right(sorted_x_values, right_edge) - 1)
-            x = x_sorted_holes_coords[right_edge_nearest_hole_idx].x
-            y = x_sorted_holes_coords[right_edge_nearest_hole_idx].y
-            if abs(x - right_edge) < min_hole_dist and upper_edge <= y <= lower_edge:
-                right_edge = x - min_hole_dist
-            else:
-                break
-
-        # Sort the holes according to the coordinates of their lower edge.
-        y_sorted_holes_coords = sorted(holes_coords, key=lambda coord: coord.y2)
-
-        # Remove holes that are outside the cutting path rectangular area.
-        y_sorted_holes_coords = list(filter(lambda coord: left_edge <= coord.x <= right_edge,
-                                            y_sorted_holes_coords))
-        # Get lower edge coordinates of holes.
-        sorted_y_values = list(map(lambda coord: coord.y2, y_sorted_holes_coords))
-
-        # Adjust the cutting rectangle upper edge position,
-        # to be at least far from nearest hole lower edge by min_hole_dist.
-        while len(sorted_y_values) > 0:
-            upper_edge_nearest_hole_idx = min(bisect_left(sorted_y_values, upper_edge), len(sorted_y_values)-1)
-            x = y_sorted_holes_coords[upper_edge_nearest_hole_idx].x
-            y = y_sorted_holes_coords[upper_edge_nearest_hole_idx].y
-            y2 = y_sorted_holes_coords[upper_edge_nearest_hole_idx].y2
-            if abs(y - upper_edge) < min_hole_dist and left_edge <= x <= right_edge:
-                upper_edge = y2 + min_hole_dist
-            else:
-                break
-
-        # Get upper edge coordinates of holes.
-        sorted_y_values = list(map(lambda coord: coord.y, y_sorted_holes_coords))
-
-        # Adjust the cutting rectangle lower edge position,
-        # to be at least far from nearest hole upper edge by min_hole_dist.
-        while len(sorted_y_values) > 0:
-            lower_edge_nearest_hole_idx = bisect_right(sorted_y_values, lower_edge) - 1
-            x = y_sorted_holes_coords[lower_edge_nearest_hole_idx].x
-            y = y_sorted_holes_coords[lower_edge_nearest_hole_idx].y
-            if abs(y - lower_edge) < min_hole_dist and left_edge <= x <= right_edge:
-                lower_edge = y - min_hole_dist
-            else:
-                break
-        
-        cut_rect = Rect(left_edge, upper_edge, right_edge - left_edge, lower_edge - upper_edge)
+        if method == 0:
+            cut_rect = rectangular_path_method(holes_coords, left_edge, right_edge, upper_edge, lower_edge, min_hole_dist)
+            cut_path = cut_rect.rect_to_path()
+        elif method == 1:
+            cut_path = custom_path_method(holes_coords, left_edge, right_edge, upper_edge, lower_edge, min_hole_dist)
+        else:
+            raise ValueError("Wrong method number")
 
         if draw_on is not None:
             # Draw the final cutting path in red.
@@ -284,7 +391,7 @@ def plan_cover_cutting_path(input_img, tol=30, min_hole_dist=10, draw_on=None):
         # cropped_gray = cut_rect.crop_img(gray)
         # detect_holes(cropped_gray, draw_on=cropped_img)
         
-    return cut_rect
+    return cut_path
 
 
 if __name__ == "__main__":
