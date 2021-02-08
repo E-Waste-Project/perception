@@ -160,3 +160,4 @@ if __name__ == "__main__":
     rospy.init_node("components_detection")
 
     model = Model()
+    model.generate_and_publish_cutting_path()
