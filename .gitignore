@@ -1,4 +1,7 @@
-.*
+.vscode
+.catkin_tools
 build
 devel
 logs
+__pycache__
+.pyc*
