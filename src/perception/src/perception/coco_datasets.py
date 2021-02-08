@@ -12,9 +12,17 @@ from PIL import Image as PILImage
 from PIL import ImageDraw as PILImageDraw
 import collections
 
+
+format_dict = {'x1': lambda x: x[0], 'x2': lambda x: x[0] + x[2], 'y1': lambda x: x[1],
+               'y2': lambda x: x[1] + x[3], 'w': lambda x: x[2], 'h': lambda x: x[3],
+               'xc': lambda x: x[0] + x[2] / 2.0, 'yc': lambda x: x[1] + x[3] / 2.0}
+
+
+def convert_format(box, out_format=('x1', 'y1', 'w', 'h')):
+    return [format_dict[element](box) for element in format]
+
+
 # Load the dataset json
-
-
 class CocoDataset():
     def __init__(self, annotation_path, image_dir):
         self.annotation_path = annotation_path
@@ -23,7 +31,7 @@ class CocoDataset():
                        'orchid', 'slateblue', 'limegreen', 'seagreen', 'darkgreen', 'olive',
                        'teal', 'aquamarine', 'steelblue', 'powderblue', 'dodgerblue', 'navy',
                        'magenta', 'sienna', 'maroon']
-
+        
         json_file = open(self.annotation_path)
         self.coco = json.load(json_file)
         json_file.close()
@@ -290,9 +298,6 @@ class CocoDataset():
             self.segmentations[image_id].append(segmentation)
 
     def get_labels(self, width=None, height=None, format=('x1', 'y1', 'w', 'h'), relative=False):
-        format_dict = {'x1': lambda x: x[0], 'x2': lambda x: x[0] + x[2], 'y1': lambda x: x[1],
-                       'y2': lambda x: x[1] + x[3], 'w': lambda x: x[2], 'h': lambda x: x[3],
-                       'xc': lambda x: x[0] + x[2] / 2.0, 'yc': lambda x: x[1] + x[3] / 2.0}
         all_imgs_labels = {}
         if ((width is not None) or (height is not None)) and relative:
             raise ValueError(
@@ -319,8 +324,7 @@ class CocoDataset():
                 bbox[2] *= width_ratio
                 bbox[1] *= height_ratio
                 bbox[3] *= height_ratio
-                new_bbox = [format_dict[element]
-                            (bbox) for element in format]
+                new_bbox = convert_format(bbox, format)
                 img_labels[cat_name].append(new_bbox)
         self.all_imgs_labels = dict(collections.OrderedDict(sorted(all_imgs_labels.items(), key=lambda x: int(x[0][:-4]))))
         return self.all_imgs_labels

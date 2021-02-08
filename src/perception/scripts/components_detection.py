@@ -11,9 +11,13 @@ import time
 import warnings
 warnings.filterwarnings('ignore')   # Suppress Matplotlib warnings
 
+from perception.laptop_perception_helpers import plan_cover_cutting_path
+from perception.coco_datasets import convert_format
+
 
 class Model:
-    def __init__(self, model_path='/home/zaferpc/abb_ws/src/Disassembly-Perception/src/perception/models/'):
+    def __init__(self,
+     model_path='/home/zaferpc/abb_ws/src/Disassembly-Perception/src/perception/models/'):
         
         PATH_TO_MODEL_DIR = model_path + 'saved_model'
         PATH_TO_LABELS = model_path + 'label_map.pbtxt'
@@ -53,6 +57,10 @@ class Model:
         # dictionary to convert class id to class threshold
         self.cid_to_cthresh = {vals['id']: vals['thresh'] for cname,
                         vals in self.class_thresh.items()}
+        
+        self.path_publisher = rospy.Publisher("/cutting_path",
+                                              Float64MultiArray,
+                                              queue_size=1)
 
     def remove_detections(self, detections, indicies_to_remove):
         detections['detection_boxes'] = np.delete(
@@ -100,37 +108,52 @@ class Model:
 
         return detections
     
-    def get_class_detections(self, detections, class_id, get_scores=False, min_score=0):
+    def get_class_detections(self, detections, class_id,
+     format=('x1', 'y1', 'w', 'h'), get_scores=False, min_score=0):
         boxes = []
         scores = []
         for i, cid in enumerate(detections['detection_classes']):
             if cid == class_id:
-                box = detections['detection_boxes'][i]
-                boxes.append(box)
+                box = convert_format(detections['detection_boxes'][i],format)
                 score = detections['detection_scores'][i]
-                if get_scores and (score >= min_score):
-                    scores.append(score)
+                if score >= min_score:
+                    boxes.append(box)
+                    if get_scores:
+                        scores.append(score)
         
         if get_scores:
             return boxes, scores
         else:
             return boxes
     
-    def generate_and_publish_cutting_path(self):
+    def generate_and_publish_cutting_path(self, min_screw_score=0):
         detections = self.recieve_and_detect()
         
         # Get laptop_cover with highest confidence.
-        cover_boxes, cover_scores = self.get_class_detections(detections, 
-        self.cname_to_cid['Laptop_Back_Cover'], get_scores=True)
+        cover_boxes, cover_scores = self.get_class_detections(detections,\
+            self.cname_to_cid['Laptop_Back_Cover'], get_scores=True)
 
-        best_cover_score_index = 0
-        max_score = 0
-        for i, score in enumerate(cover_scores):
-            pass
-            
+        best_cover_score = 0
+        best_cover_box = None
+        for box, score in zip(cover_boxes, cover_scores):
+            if score > best_cover_score:
+                best_cover_score = score
+                best_cover_box = box
         
+        # Get screw holes.
+        screw_boxes = self.get_class_detections(detections=detections,
+                                                class_id=self.cname_to_cid['Screw'],
+                                                min_score=min_screw_score)
         
+        # Get Cutting Path.
+        cut_path = plan_cover_cutting_path(laptop_coords=best_cover_box,
+                                           holes_coords=screw_boxes)
         
+        # Publish Cutting Path.
+        path_msg = Float64MultiArray()
+        path_msg.data = cut_path
+        self.path_publisher.publish(path_msg)
+
 
 if __name__ == "__main__":
 
