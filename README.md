@@ -5,7 +5,7 @@ Perception tasks needed for robots to disassemble laptops.
 ```
 Python >= 3
 OpenCV >= 4
-ros kinetic/melodic
+ros melodic
 ```
 
 ## Installation
