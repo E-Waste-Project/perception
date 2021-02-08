@@ -17,7 +17,9 @@ from perception.coco_datasets import convert_format
 
 class Model:
     def __init__(self,
-     model_path='/home/zaferpc/abb_ws/src/Disassembly-Perception/src/perception/models/'):
+                 model_path='/home/zaferpc/abb_ws/src/perception/models/',
+                 image_topic='/camera/color/image_raw',
+                 cutting_plan_topic='/cutting_path'):
         
         PATH_TO_MODEL_DIR = model_path + 'saved_model'
         PATH_TO_LABELS = model_path + 'label_map.pbtxt'
@@ -31,6 +33,8 @@ class Model:
         end_time = time.time()
         elapsed_time = end_time - start_time
         print('Done! Took {} seconds'.format(elapsed_time))
+
+        self.image_topic = image_topic
 
         # define class thresholds, ids, and names.
         self.class_thresh = {
@@ -58,7 +62,7 @@ class Model:
         self.cid_to_cthresh = {vals['id']: vals['thresh'] for cname,
                         vals in self.class_thresh.items()}
         
-        self.path_publisher = rospy.Publisher("/cutting_path",
+        self.path_publisher = rospy.Publisher(cutting_plan_topic,
                                               Float64MultiArray,
                                               queue_size=1)
 
@@ -72,7 +76,7 @@ class Model:
     
     def recieve_and_detect(self):
         # Wait for rgb camera stream to publish a frame.
-        image_msg = rospy.wait_for_message('/camera/color/image_raw', Image)
+        image_msg = rospy.wait_for_message(self.image_topic, Image)
         
         # Convert msg to numpy image.
         image_np = numpify(image_msg)
@@ -108,12 +112,12 @@ class Model:
 
         return detections
     
-    def get_class_detections(self, detections, class_id,
+    def get_class_detections(self, detections, class_name,
      format=('x1', 'y1', 'w', 'h'), get_scores=False, min_score=0):
         boxes = []
         scores = []
         for i, cid in enumerate(detections['detection_classes']):
-            if cid == class_id:
+            if cid == self.cname_to_cid[class_name]:
                 box = convert_format(detections['detection_boxes'][i],format)
                 score = detections['detection_scores'][i]
                 if score >= min_score:
@@ -126,13 +130,21 @@ class Model:
         else:
             return boxes
     
-    def generate_and_publish_cutting_path(self, min_screw_score=0):
+    def generate_and_publish_cover_cutting_path(self, min_screw_score=0):
+        """Waits for an image msg from camera topic, then applies detection model
+        to get the detected classes, finally generate a cutting path and publish it.
+
+        param min_screw_score: a score threshold for detected screws confidence.
+        """
+        # Recieve an image msg from camera topic and return detections.
         detections = self.recieve_and_detect()
         
+        # Get detected laptop_covers.
+        cover_boxes, cover_scores = self.get_class_detections(detections=detections,
+                                                              class_name='Laptop_Back_Cover',
+                                                              get_scores=True)
+        
         # Get laptop_cover with highest confidence.
-        cover_boxes, cover_scores = self.get_class_detections(detections,\
-            self.cname_to_cid['Laptop_Back_Cover'], get_scores=True)
-
         best_cover_score = 0
         best_cover_box = None
         for box, score in zip(cover_boxes, cover_scores):
@@ -142,7 +154,7 @@ class Model:
         
         # Get screw holes.
         screw_boxes = self.get_class_detections(detections=detections,
-                                                class_id=self.cname_to_cid['Screw'],
+                                                class_name='Screw',
                                                 min_score=min_screw_score)
         
         # Get Cutting Path.
@@ -156,8 +168,10 @@ class Model:
 
 
 if __name__ == "__main__":
-
+    
     rospy.init_node("components_detection")
 
-    model = Model()
+    model = Model(model_path='/home/zaferpc/abb_ws/src/perception/models/',
+                  image_topic='/camera/color/image_raw',
+                  cutting_plan_topic='/cutting_path')
     model.generate_and_publish_cutting_path()
