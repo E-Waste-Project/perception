@@ -10,11 +10,9 @@ ros melodic
 
 ## Installation
 ```shell
-$ cd ~
-$ git clone https://github.com/E-Waste-Project/Disassembly-Perception.git
-$ cp -r Disassembly-Perception/src/ your_catkin_ws/src/
-$ sudo rm -r Disassembly-Perception
-$ cd your_catkin_ws && catkin build perception
+$ cd your_catkin_ws/src/
+$ git clone https://github.com/E-Waste-Project/perception.git
+$ cd .. && catkin build perception
 ```
 
 ## Usage
