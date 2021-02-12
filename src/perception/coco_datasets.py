@@ -19,7 +19,7 @@ format_dict = {'x1': lambda x: x[0], 'x2': lambda x: x[0] + x[2], 'y1': lambda x
 
 
 def convert_format(box, out_format=('x1', 'y1', 'w', 'h')):
-    return [format_dict[element](box) for element in format]
+    return [format_dict[element](box) for element in out_format]
 
 
 # Load the dataset json
