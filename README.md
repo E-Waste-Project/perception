@@ -17,7 +17,7 @@ $ cd .. && catkin build perception
 ```
 Step 2: Create 'models' folder and download detection models inside it.
 ```shell
-$ cd your_catkin_ws/src/perception && mkdir models
+$ cd your_catkin_ws/src/perception && mkdir models && cd models
 $ wget https://drive.google.com/file/d/1oWRE2vGRF8ScWP111Tp1CPUFbzeSc5vF/view?usp=sharing
 ```
 
