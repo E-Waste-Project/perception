@@ -5,3 +5,4 @@ devel
 logs
 __pycache__
 .pyc*
+models/*
