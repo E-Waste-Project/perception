@@ -24,7 +24,7 @@ def convert_format(box, out_format=('x1', 'y1', 'w', 'h')):
 
 # Load the dataset json
 class CocoDataset():
-    def __init__(self, annotation_path, image_dir):
+    def __init__(self, annotation_path=None, image_dir=None):
         self.annotation_path = annotation_path
         self.image_dir = image_dir
         self.colors = ['blue', 'purple', 'red', 'green', 'orange', 'salmon', 'pink', 'gold',
@@ -32,15 +32,16 @@ class CocoDataset():
                        'teal', 'aquamarine', 'steelblue', 'powderblue', 'dodgerblue', 'navy',
                        'magenta', 'sienna', 'maroon']
         
-        json_file = open(self.annotation_path)
-        self.coco = json.load(json_file)
-        json_file.close()
+        if self.annotation_path is not None:
+            json_file = open(self.annotation_path)
+            self.coco = json.load(json_file)
+            json_file.close()
 
-        #self.process_info()
-        #self.process_licenses()
-        self.process_categories()
-        self.process_images()
-        self.process_segmentations()
+            #self.process_info()
+            #self.process_licenses()
+            self.process_categories()
+            self.process_images()
+            self.process_segmentations()
 
     def display_info(self):
         print('Dataset Info:')
