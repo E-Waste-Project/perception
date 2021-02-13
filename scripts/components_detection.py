@@ -118,7 +118,7 @@ class Model:
         scores = []
         for i, cid in enumerate(detections['detection_classes']):
             if cid == self.cname_to_cid[class_name]:
-                box = convert_format(detections['detection_boxes'][i],format)
+                box = convert_format(detections['detection_boxes'][i], in_format=('y1, x1, y2, x2'), out_format=format)
                 score = detections['detection_scores'][i]
                 if score >= min_score:
                     boxes.append(box)
