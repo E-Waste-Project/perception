@@ -8,7 +8,7 @@ from std_msgs.msg import Float32MultiArray
 from geometry_msgs.msg import PoseArray
 from geometry_msgs.msg import Pose
 import ros_numpy
-
+import matplotlib.pyplot as plt
 
 class Subscribers():
     def __init__(self):
@@ -49,13 +49,21 @@ class Subscribers():
         pose_msg.poses = []
         print(contour_xyz.shape)
         print(contour_xyz)
+        self.x_list = []
+        self.y_list = []
         for point_num in range(0, contour_indices[:, 0].shape[0]):
+            if abs(contour_xyz[2, point_num]-np.median(contour_xyz[2]))>0.1:
+                continue
             pose = Pose()
             pose.position.x = contour_xyz[1, point_num]
+            self.x_list.append(pose.position.x)
             pose.position.y = contour_xyz[0, point_num]
+            self.y_list.append(pose.position.y)
             pose.position.z = contour_xyz[2, point_num]
             # pose.orientation.w = 1
             pose_msg.poses.append(pose)
+        # plt.plot(self.x_list,self.y_list)
+        # plt.show(block=False)
         self.cut_xyz_pub.publish(pose_msg)
 
     def info_callback(self, msg):

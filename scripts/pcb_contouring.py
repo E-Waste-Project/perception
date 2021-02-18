@@ -46,7 +46,7 @@ rospy.init_node("test_node")
 message_pub = rospy.Publisher("/cutting_path",Float32MultiArray)
 
 model = load_model(
-    '/home/zaferpc/abb_ws/src/Disassembly-Perception/src/perception/models/segmentation_model.h5')
+    '/home/zaferpc/abb_ws/src/perception/models/segmentation_model.h5')
 model.summary()
 #imgs = load_images("/home/zaferpc/data/laptop_components/exp_auto_direct_light/imgs")
 image_raw = rospy.wait_for_message('/camera/color/image_raw',Image)
@@ -56,12 +56,12 @@ image_captured = cv2.normalize(image_captured, None, 0, 1, cv2.NORM_MINMAX, cv2.
 image_captured = cv2.resize(image_captured, (1280, 768))
 imgs = [image_captured]
 cv2.imshow("img", imgs[0])
-cv2.waitKey(0)
+#cv2.waitKey(0)
 
 test_image = model.predict(np.array(imgs))
 
 cv2.imshow("test_img", test_image[0])
-cv2.waitKey(0)
+#cv2.waitKey(0)
 
 for i in range(len(test_image)):
     imgray = cv2.cvtColor(test_image[i], cv2.COLOR_BGR2GRAY)
@@ -76,7 +76,7 @@ for i in range(len(test_image)):
     filtered_imgray = cv2.GaussianBlur(filtered_imgray, (11, 11), 0)
     filtered_imgray = cv2.resize(filtered_imgray,(1280,720))
     cv2.imshow("filtered_img", filtered_imgray)
-    cv2.waitKey(0)
+#    cv2.waitKey(0)
     #imgray4 = cv2.Canny(imgray4,100,200)
     #imgray4 = cv2.adaptiveThreshold(np.uint8(imgray3),255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,cv2.THRESH_BINARY,11,2)
     contours, hierarchy = cv2.findContours(
@@ -88,11 +88,15 @@ for i in range(len(test_image)):
     cnt_resized=scale_contour(cnt2,0.9)
     print(cnt_resized)
     cv2.drawContours(draw_on, cnt_resized, -1, (0, 255, 0), 5)
-
+    
+    for i in range(len(cnt_resized) - 1):
+        cv2.line(draw_on, (cnt_resized[i][0][0], cnt_resized[i][0][1]), (cnt_resized[i+1][0][0], cnt_resized[i+1][0][1]), (0, 0, 255), 2)
+        
     cv2.imshow("result", draw_on)
     cv2.waitKey(0)
     msg = Float32MultiArray()
     msg.data=[]
+
     for cnt_counter in cnt_resized:
         msg.data.append(cnt_counter[0][1])
         msg.data.append(cnt_counter[0][0])

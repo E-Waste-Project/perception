@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 import rospy
 from sensor_msgs.msg import Image
-from std_msgs.msg import Float64MultiArray
-from rospy_numpy import numpify, msgify
+from std_msgs.msg import Float32MultiArray
+from ros_numpy import numpify, msgify
 
 import numpy as np
 import tensorflow as tf
@@ -13,6 +13,7 @@ warnings.filterwarnings('ignore')   # Suppress Matplotlib warnings
 
 from perception.laptop_perception_helpers import plan_cover_cutting_path
 from perception.coco_datasets import convert_format
+import cv2
 
 
 class Model:
@@ -35,21 +36,22 @@ class Model:
         print('Done! Took {} seconds'.format(elapsed_time))
 
         self.image_topic = image_topic
+        self.image = None
 
         # define class thresholds, ids, and names.
         self.class_thresh = {
-            'Battery':           {'thresh': 0.5, 'id': 0},
-            'Connector':         {'thresh': 0.2, 'id': 1},
-            'CPU':               {'thresh': 0.8, 'id': 2},
-            'Fan':               {'thresh': 0.8, 'id': 3},
-            'Hard Disk':         {'thresh': 0.5, 'id': 4},
-            'Motherboard':       {'thresh': 0.8, 'id': 5},
-            'RAM':               {'thresh': 0.7, 'id': 6},
-            'Screw':             {'thresh': 0.2, 'id': 7},
-            'SSD':               {'thresh': 0.8, 'id': 8},
-            'WLAN':              {'thresh': 0.7, 'id': 9},
-            'CD-ROM':            {'thresh': 0.5, 'id': 10},
-            'Laptop_Back_Cover': {'thresh': 0.92, 'id': 11}
+            'Battery':           {'thresh': 0.5, 'id': 1},
+            'Connector':         {'thresh': 0.2, 'id': 2},
+            'CPU':               {'thresh': 0.8, 'id': 3},
+            'Fan':               {'thresh': 0.8, 'id': 4},
+            'Hard Disk':         {'thresh': 0.5, 'id': 5},
+            'Motherboard':       {'thresh': 0.8, 'id': 6},
+            'RAM':               {'thresh': 0.7, 'id': 7},
+            'Screw':             {'thresh': 0.2, 'id': 8},
+            'SSD':               {'thresh': 0.8, 'id': 9},
+            'WLAN':              {'thresh': 0.7, 'id': 10},
+            'CD-ROM':            {'thresh': 0.5, 'id': 11},
+            'Laptop_Back_Cover': {'thresh': 0.92, 'id': 12}
         }
 
         # dictionary to convert class id to class name
@@ -63,7 +65,7 @@ class Model:
                         vals in self.class_thresh.items()}
         
         self.path_publisher = rospy.Publisher(cutting_plan_topic,
-                                              Float64MultiArray,
+                                              Float32MultiArray,
                                               queue_size=1)
 
     def remove_detections(self, detections, indicies_to_remove):
@@ -80,6 +82,7 @@ class Model:
         
         # Convert msg to numpy image.
         image_np = numpify(image_msg)
+        self.image = image_np
 
         # The input needs to be a tensor, convert it using `tf.convert_to_tensor`.
         input_tensor = tf.convert_to_tensor(image_np)
@@ -109,7 +112,13 @@ class Model:
                 indicies_to_remove.append(j)
         
         self.remove_detections(detections, indicies_to_remove)
-
+        print(self.image.shape)
+        print(detections['detection_boxes'][0])
+        detections['detection_boxes'][:, 0] *= self.image.shape[0]
+        detections['detection_boxes'][:, 2] *= self.image.shape[0]
+        detections['detection_boxes'][:, 1] *= self.image.shape[1]
+        detections['detection_boxes'][:, 3] *= self.image.shape[1]
+        
         return detections
     
     def get_class_detections(self, detections, class_name,
@@ -118,7 +127,8 @@ class Model:
         scores = []
         for i, cid in enumerate(detections['detection_classes']):
             if cid == self.cname_to_cid[class_name]:
-                box = convert_format(detections['detection_boxes'][i], in_format=('y1, x1, y2, x2'), out_format=format)
+                box = convert_format(detections['detection_boxes'][i], in_format=('y1', 'x1', 'y2', 'x2'), out_format=format)
+                box = [int(x) for x in box]
                 score = detections['detection_scores'][i]
                 if score >= min_score:
                     boxes.append(box)
@@ -159,11 +169,27 @@ class Model:
         
         # Get Cutting Path.
         cut_path = plan_cover_cutting_path(laptop_coords=best_cover_box,
-                                           holes_coords=screw_boxes)
+                                           holes_coords=screw_boxes,
+                                           method=1, interpolate=True, interp_step=2, tol=100, min_hole_dist=3)
+        
+        for i in range(len(best_cover_box) - 1):
+            cv2.rectangle(self.image, tuple(best_cover_box[0:2]),
+                          (best_cover_box[0] + best_cover_box[2], best_cover_box[1] + best_cover_box[3]), (0, 0, 255), 2)
+        for screw_box in screw_boxes:
+            for i in range(len(screw_box) - 1):
+                cv2.rectangle(self.image, tuple(screw_box[0:2]),
+                         (screw_box[0] + screw_box[2], screw_box[1] + screw_box[3]), (0, 0, 255), 2)   
+        for i in range(len(cut_path) - 1):
+            cv2.line(self.image, tuple(cut_path[i]), tuple(cut_path[i+1]), (0, 0, 255), 2)    
+
+        cv2.imshow("image_window", self.image)
+        key = cv2.waitKey(0) & 0xFF
         
         # Publish Cutting Path.
-        path_msg = Float64MultiArray()
-        path_msg.data = cut_path
+        path_msg = Float32MultiArray()
+        for x, y in cut_path:
+            path_msg.data.append(y)
+            path_msg.data.append(x)
         self.path_publisher.publish(path_msg)
 
 
@@ -173,5 +199,5 @@ if __name__ == "__main__":
 
     model = Model(model_path='/home/zaferpc/abb_ws/src/perception/models/',
                   image_topic='/camera/color/image_raw',
-                  cutting_plan_topic='/cutting_path')
-    model.generate_and_publish_cutting_path()
+                  cutting_plan_topic="/cutting_path")
+    model.generate_and_publish_cover_cutting_path()

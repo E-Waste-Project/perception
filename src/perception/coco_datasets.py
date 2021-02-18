@@ -15,43 +15,45 @@ from copy import copy
 
 
 xywh_to_xcycwh_xyxy = {'x1': lambda x: x[0], 'x2': lambda x: x[0] + x[2], 'y1': lambda x: x[1],
-                       'y2': lambda x: x[1] + x[3], 'w': lambda x: x[2], 'h': lambda x: x[3],
-                       'xc': lambda x: x[0] + x[2] / 2.0, 'yc': lambda x: x[1] + x[3] / 2.0}
+               'y2': lambda x: x[1] + x[3], 'w': lambda x: x[2], 'h': lambda x: x[3],
+               'xc': lambda x: x[0] + x[2] / 2.0, 'yc': lambda x: x[1] + x[3] / 2.0}
 
-xcycwh_to_xywh_xyxy = {'x1': lambda x: x[0] - x[2] / 2.0, 'y1': lambda x: x[1] - x[3] / 2.0,
-                       'x2': lambda x: x[0] + x[2] / 2.0, 'y2': lambda x: x[1] + x[3] / 2.0,
-                       'w': lambda x: x[2], 'h': lambda x: x[3]}
+xcycwh_to_xywh_xyxy = {'x1': lambda x: x[0] - x[2] /2.0, 'y1': lambda x: x[1] - x[3] / 2.0,
+                  'x2': lambda x: x[0] + x[2] / 2.0, 'y2': lambda x: x[1] + x[3] / 2.0,
+                  'w': lambda x: x[2], 'h': lambda x: x[3]}
 
 xyxy_to_xywh_xcycwh = {'x1': lambda x: x[0], 'w': lambda x: x[2] - x[0], 'y1': lambda x: x[1],
-                       'h': lambda x: x[3] - x[1], 'xc': lambda x: (x[0] + x[2]) / 2.0,
-                       'yc': lambda x: (x[1] + x[3]) / 2.0}
+               'h': lambda x: x[3] - x[1], 'xc': lambda x: (x[0] + x[2]) / 2.0,
+                'yc': lambda x: (x[1] + x[3]) / 2.0}
 
-yxyx_to_xywh_xcycwh = {'x1': lambda x: x[1], 'w': lambda x: x[3] - x[1], 'y1': lambda x: x[0],
-                       'h': lambda x: x[2] - x[0], 'xc': lambda x: (x[1] + x[3]) / 2.0,
-                       'yc': lambda x: (x[0] + x[2]) / 2.0}
+yxyx_to_xywh = {'x1': lambda x: x[1], 'w': lambda x: x[3] - x[1], 'y1': lambda x: x[0],
+               'h': lambda x: x[2] - x[0], 'xc': lambda x: (x[1] + x[3]) / 2.0,
+               'yc': lambda x: (x[0] + x[2]) / 2.0}
 
 
 def convert_format(box, in_format=('x1', 'y1', 'w', 'h'), out_format=('x1', 'y1', 'x2', 'y2')):
     if in_format == ('x1', 'y1', 'x2', 'y2') and \
-       (out_format == ('x1', 'y1', 'w', 'h') or
-            out_format == ('xc', 'yc', 'w', 'h')):
+       (out_format == ('x1', 'y1', 'w', 'h') or \
+       out_format == ('xc', 'yc', 'w', 'h')):
       return [xyxy_to_xywh_xcycwh[element](box) for element in out_format]
-    elif in_format == ('y1', 'x1', 'y2', 'x2') and \
-       (out_format == ('x1', 'y1', 'w', 'h') or
-            out_format == ('xc', 'yc', 'w', 'h')):
-      return [yxyx_to_xywh_xcycwh[element](box) for element in out_format]
     elif in_format == ('xc', 'yc', 'w', 'h') and \
-        (out_format == ('x1', 'y1', 'w', 'h') or
+         (out_format == ('x1', 'y1', 'w', 'h') or \
          out_format == ('x1', 'y1', 'x2', 'y2')):
       return [xcycwh_to_xywh_xyxy[element](box) for element in out_format]
     elif in_format == ('x1', 'y1', 'w', 'h') and \
-        (out_format == ('x1', 'y1', 'x2', 'y2') or
+         (out_format == ('x1', 'y1', 'x2', 'y2') or \
          out_format == ('xc', 'yc', 'w', 'h')):
       return [xywh_to_xcycwh_xyxy[element](box) for element in out_format]
+    elif in_format == ('y1', 'x1', 'y2', 'x2') and \
+       (out_format == ('x1', 'y1', 'w', 'h') or \
+       out_format == ('xc', 'yc', 'w', 'h')):
+      return [yxyx_to_xywh[element](box) for element in out_format]
     elif in_format == out_format:
       return box
     else:
       raise ValueError("Wrong Conversion")
+    
+
 
 
 # Load the dataset json
@@ -63,7 +65,10 @@ class CocoDataset():
                        'orchid', 'slateblue', 'limegreen', 'seagreen', 'darkgreen', 'olive',
                        'teal', 'aquamarine', 'steelblue', 'powderblue', 'dodgerblue', 'navy',
                        'magenta', 'sienna', 'maroon']
-
+        
+        self.format = ('x1', 'y1', 'w', 'h')
+        self.isrel = False
+        
         if self.annotation_path is not None:
             json_file = open(self.annotation_path)
             self.coco = json.load(json_file)
@@ -74,6 +79,7 @@ class CocoDataset():
             self.process_categories()
             self.process_images()
             self.process_segmentations()
+            self.cname2cid = {c['name']:c['id'] for c in self.coco['categories']}
 
     def display_info(self):
         print('Dataset Info:')
@@ -330,11 +336,9 @@ class CocoDataset():
                 self.segmentations[image_id] = []
             self.segmentations[image_id].append(segmentation)
 
-    def get_labels(self, width=None, height=None, format=('x1', 'y1', 'w', 'h'), relative=False):
+    def get_labels(self, width=None, height=None, 
+    out_format=('x1', 'y1', 'w', 'h'), relative=False):
         all_imgs_labels = {}
-        # if ((width is not None) or (height is not None)) and relative:
-        #     raise ValueError(
-        #         "Can't be relative and have certain width or height")
 
         for img_id in self.segmentations.keys():
             img_name = self.images[img_id]['file_name']
@@ -345,9 +349,12 @@ class CocoDataset():
                 width_ratio = width / self.images[img_id]['width']
             if height is not None:
                 height_ratio = height / self.images[img_id]['height']
-            if relative:
+            if relative and not self.isrel:
                 width_ratio /= self.images[img_id]['width']
                 height_ratio /= self.images[img_id]['height']
+            elif not relative and self.isrel:
+                width_ratio *= self.images[img_id]['width']
+                height_ratio *= self.images[img_id]['height']
             for segm in self.segmentations[img_id]:
                 cat_name = self.categories[segm['category_id']]['name']
                 bbox = segm['bbox'].copy()
@@ -357,39 +364,32 @@ class CocoDataset():
                 bbox[2] *= width_ratio
                 bbox[1] *= height_ratio
                 bbox[3] *= height_ratio
-                new_bbox = convert_format(bbox, in_format=('x1', 'y1', 'w', 'h'),
-                                          out_format=format)
+                new_bbox = convert_format(bbox, in_format=self.format,\
+                                                out_format=out_format)
                 img_labels[cat_name].append(new_bbox)
-        self.all_imgs_labels = dict(collections.OrderedDict(
-            sorted(all_imgs_labels.items(), key=lambda x: int(x[0][:-4]))))
+        self.all_imgs_labels = dict(collections.OrderedDict(sorted(all_imgs_labels.items(), key=lambda x: int(x[0][:-4]))))
+        self.format=out_format
+        self.isrel = True if relative else False
         return self.all_imgs_labels
-
+        
     def write_labels_to_file(self,
                              directory,
                              separator=' ',
                              add_class_name=True,
                              add_class_id=False,
                              add_conf=False,
-                             in_format=('x1', 'y1', 'w', 'h'),
-                             out_format=None):
-
-        classes_ids = {val['name']: val['id'] -
-                       1 for val in self.categories.values()}
+                             out_format=('x1', 'y1', 'w', 'h')):
+        classes_ids = { val['name']: val['id'] - 1 for val in  self.categories.values()}
         # Convert to string and adjust box format.
         for img_name, img in self.all_imgs_labels.items():
             formated_string_labels = []
             for c in img:
                 for box in img[c]:
                     string = c + separator if add_class_name else ""
-                    string += str(classes_ids[c]) + \
-                        separator if add_class_id else ""
+                    string += str(classes_ids[c]) + separator if add_class_id else ""
                     bbox = copy(box)
                     if out_format is not None:
-                      if len(box) == 5:
-                        bbox = convert_format(box[:-1], in_format, out_format)
-                        bbox.append(box[-1])
-                      else:
-                        bbox = convert_format(bbox, in_format, out_format)
+                        bbox[:4] = convert_format(bbox[:4], self.format, out_format)
                     string += str(bbox[-1]) + separator if add_conf else ""
                     string += str(bbox[0])
                     for x in bbox[1:4]:
@@ -397,12 +397,12 @@ class CocoDataset():
                     string += "\n"
                     formated_string_labels.append(string)
             # Writing data to a file.
-            with open(directory + img_name[:-3] + "txt", "w") as file:
+            with open(directory + img_name[:-3] + "txt", "w") as file: 
                 file.writelines(formated_string_labels)
-
-    def read_labels_from_files(self, directory, has_conf=True, add_conf=False, box_formatter=lambda x: x):
-        classes_names = {val['id'] - 1: val['name']
-                         for val in self.categories.values()}
+                
+    def read_labels_from_files(self, directory, out_format=('x1', 'y1', 'w', 'h'),
+    isrel=False, has_conf=True, add_conf=False, box_formatter=lambda x: float(x)):
+        classes_names = {val['id'] - 1: val['name'] for val in self.categories.values()}
         all_imgs_labels = {}
         for filename in os.listdir(directory):
             if not filename.endswith(".txt"):
@@ -428,7 +428,47 @@ class CocoDataset():
             all_imgs_labels[imgname] = img_labels
         self.all_imgs_labels = dict(collections.OrderedDict(
             sorted(all_imgs_labels.items(), key=lambda x: int(x[0][:-4]))))
+        self.format = out_format
+        self.isrel = isrel
         return self.all_imgs_labels
+    
+    def get_labels_as(self, out_format=('x1', 'y1', 'w', 'h'), relative=False,
+     dtype='float', width=1.0, height=1.0, clsids=False, imgids=False):
+        all_imgs_labels = {}
+        img_id = 0
+        for img_name, annotations in self.all_imgs_labels.items():
+            img = img_name
+            if imgids:
+              img = img_id
+            all_imgs_labels[img] = {}
+            width_ratio, height_ratio = 1.0, 1.0
+            if relative and not self.isrel:
+                width_ratio /= width
+                height_ratio /= height
+            elif not relative and self.isrel:
+                width_ratio *= width
+                height_ratio *= height
+            for cls_name, boxes in annotations.items():
+              id = self.cname2cid[cls_name]
+              all_imgs_labels[img][id] = []
+              for box in boxes:
+                new_box = []
+                new_box.append(box[0] * width_ratio)
+                new_box.append(box[1] * height_ratio)
+                new_box.append(box[2] * width_ratio)
+                new_box.append(box[3] * height_ratio)
+                if len(box) > 4:
+                  new_box.append(box[4])
+                new_box[0:4] = convert_format(new_box[0:4], in_format=self.format,\
+                                            out_format=out_format)
+                if dtype == 'int':
+                  new_box[0:4] = list(map(int, new_box[0:4]))
+                all_imgs_labels[img][id].append(new_box)
+            img_id += 1
+        return all_imgs_labels
+
+        
+        
 
 
 if __name__ == "__main__":

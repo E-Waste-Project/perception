@@ -418,9 +418,31 @@ def custom_path_method(holes_coords, left, right, upper, lower, min_hole_dist):
     
     return cut_path
 
+def interpolate(p1, p2, step):
+    sign = int(abs(p2-p1) / (p2-p1))
+    return list(range(p1, p2, step * sign))
 
-def plan_cover_cutting_path(input_img=None, tol=30, min_hole_dist=10, draw_on=None,
- laptop_coords=None, holes_coords=None, method=0):
+def interpolate_path(path, step=2):
+    new_path = []
+    for i in range(len(path) - 1):
+        x1, y1 = path[i]
+        x2, y2 = path[i+1]
+        if abs(y2-y1) > 0:
+            new_ys = interpolate(y1, y2, step)
+            new_xs = [x1] * len(new_ys)
+        else:
+            new_xs = interpolate(x1, x2, step)
+            new_ys = [y1] * len(new_xs)
+        new_path.extend([(x, y) for x, y in zip(new_xs, new_ys)])
+        new_path.append((x2, y2))
+    return new_path
+        
+        
+        
+
+
+def plan_cover_cutting_path(input_img=None, tol=30, min_hole_dist=5, draw_on=None,
+ laptop_coords=None, holes_coords=None, method=0, interpolate=True, interp_step=2):
     """Takes gray_scale img containing a laptop Or takes laptop & holes coordinates,
      returns cutting path points as list of tuples.
 
@@ -489,6 +511,9 @@ def plan_cover_cutting_path(input_img=None, tol=30, min_hole_dist=10, draw_on=No
             cut_path = custom_path_method(holes_coords, left, right, upper, lower, min_hole_dist)
         else:
             raise ValueError("Wrong method number")
+
+        if interpolate:
+            cut_path = interpolate_path(cut_path, step=interp_step)
 
         if draw_on is not None:
             # Draw the final cutting path in red.
