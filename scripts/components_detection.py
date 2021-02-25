@@ -2,7 +2,7 @@
 import rospy
 from sensor_msgs.msg import Image
 from std_msgs.msg import Float32MultiArray
-from ros_numpy import numpify, msgify
+from ros_numpy import numpify
 
 import numpy as np
 import tensorflow as tf
@@ -147,8 +147,6 @@ class Model:
         param min_screw_score: a score threshold for detected screws confidence.
         """
         
-        image_np = np.copy(image)
-
         # Get detected laptop_covers.
         cover_boxes, cover_scores = self.get_class_detections(detections=detections,
                                                             class_name='Laptop_Back_Cover',
@@ -172,6 +170,8 @@ class Model:
                                         holes_coords=screw_boxes,
                                         method=1, interpolate=True, interp_step=2, tol=100, min_hole_dist=3)
         
+        image_np = np.copy(image)
+
         # Visualise detected laptop_cover
         for i in range(len(best_cover_box) - 1):
             cv2.rectangle(image_np, tuple(best_cover_box[0:2]),
@@ -213,10 +213,10 @@ if __name__ == "__main__":
                   image_topic='/camera/color/image_raw',
                   cutting_plan_topic="/cutting_path")
 
-    # Recieve an image msg from camera topic and return detections.
+    # Recieve an image msg from camera topic, then, return image and detections.
     image, detections = model.recieve_and_detect()
 
-    # Generate the cover cutting path from given detections.
+    # Generate the cover cutting path from given detections and visualise on image.
     cut_path = model.generate_cover_cutting_path(image, detections, min_screw_score=0)
 
     # Publish the generated cutting path if not empty.
