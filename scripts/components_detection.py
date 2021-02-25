@@ -122,7 +122,12 @@ class Model:
         return image, detections
     
     def get_class_detections(self, detections, class_name,
-     format=('x1', 'y1', 'w', 'h'), get_scores=False, min_score=0):
+                             format=('x1', 'y1', 'w', 'h'),
+                             get_scores=False,
+                             min_score=0):
+        """
+        Extract detections of a specific class from all the detections in the image.
+        """
         boxes = []
         scores = []
         for i, cid in enumerate(detections['detection_classes']):
