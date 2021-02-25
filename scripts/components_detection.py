@@ -82,7 +82,6 @@ class Model:
         
         # Convert msg to numpy image.
         image_np = numpify(image_msg)
-        self.image = image_np
 
         # The input needs to be a tensor, convert it using `tf.convert_to_tensor`.
         input_tensor = tf.convert_to_tensor(image_np)
@@ -112,14 +111,15 @@ class Model:
                 indicies_to_remove.append(j)
         
         self.remove_detections(detections, indicies_to_remove)
-        print(self.image.shape)
+
+        print(image_np.shape)
         print(detections['detection_boxes'][0])
-        detections['detection_boxes'][:, 0] *= self.image.shape[0]
-        detections['detection_boxes'][:, 2] *= self.image.shape[0]
-        detections['detection_boxes'][:, 1] *= self.image.shape[1]
-        detections['detection_boxes'][:, 3] *= self.image.shape[1]
+        detections['detection_boxes'][:, 0] *= image_np.shape[0]
+        detections['detection_boxes'][:, 2] *= image_np.shape[0]
+        detections['detection_boxes'][:, 1] *= image_np.shape[1]
+        detections['detection_boxes'][:, 3] *= image_np.shape[1]
         
-        return detections
+        return image, detections
     
     def get_class_detections(self, detections, class_name,
      format=('x1', 'y1', 'w', 'h'), get_scores=False, min_score=0):
@@ -140,19 +140,19 @@ class Model:
         else:
             return boxes
     
-    def generate_and_publish_cover_cutting_path(self, min_screw_score=0):
+    def generate_cover_cutting_path(self, image, detections, min_screw_score=0):
         """Waits for an image msg from camera topic, then applies detection model
         to get the detected classes, finally generate a cutting path and publish it.
 
         param min_screw_score: a score threshold for detected screws confidence.
         """
-        # Recieve an image msg from camera topic and return detections.
-        detections = self.recieve_and_detect()
         
+        image_np = np.copy(image)
+
         # Get detected laptop_covers.
         cover_boxes, cover_scores = self.get_class_detections(detections=detections,
-                                                              class_name='Laptop_Back_Cover',
-                                                              get_scores=True)
+                                                            class_name='Laptop_Back_Cover',
+                                                            get_scores=True)
         
         # Get laptop_cover with highest confidence.
         best_cover_score = 0
@@ -169,22 +169,34 @@ class Model:
         
         # Get Cutting Path.
         cut_path = plan_cover_cutting_path(laptop_coords=best_cover_box,
-                                           holes_coords=screw_boxes,
-                                           method=1, interpolate=True, interp_step=2, tol=100, min_hole_dist=3)
+                                        holes_coords=screw_boxes,
+                                        method=1, interpolate=True, interp_step=2, tol=100, min_hole_dist=3)
         
+        # Visualise detected laptop_cover
         for i in range(len(best_cover_box) - 1):
-            cv2.rectangle(self.image, tuple(best_cover_box[0:2]),
-                          (best_cover_box[0] + best_cover_box[2], best_cover_box[1] + best_cover_box[3]), (0, 0, 255), 2)
+            cv2.rectangle(image_np, tuple(best_cover_box[0:2]),
+                        (best_cover_box[0] + best_cover_box[2], best_cover_box[1] + best_cover_box[3]), (0, 0, 255), 2)
+        
+        # Visualise detected screws.
         for screw_box in screw_boxes:
             for i in range(len(screw_box) - 1):
-                cv2.rectangle(self.image, tuple(screw_box[0:2]),
-                         (screw_box[0] + screw_box[2], screw_box[1] + screw_box[3]), (0, 0, 255), 2)   
+                cv2.rectangle(image_np, tuple(screw_box[0:2]),
+                        (screw_box[0] + screw_box[2], screw_box[1] + screw_box[3]), (0, 0, 255), 2)   
+        
+        # Visualise the cutting path.
         for i in range(len(cut_path) - 1):
-            cv2.line(self.image, tuple(cut_path[i]), tuple(cut_path[i+1]), (0, 0, 255), 2)    
+            cv2.line(image_np, tuple(cut_path[i]), tuple(cut_path[i+1]), (0, 0, 255), 2)    
 
-        cv2.imshow("image_window", self.image)
+        # Show image and wait for pressed key to continue or exit(if key=='e').
+        cv2.imshow("image_window", image_np)
         key = cv2.waitKey(0) & 0xFF
         
+        if key == ord('e'):
+            return
+        
+        return cut_path
+
+    def publish_cut_path(self, cut_path):
         # Publish Cutting Path.
         path_msg = Float32MultiArray()
         for x, y in cut_path:
@@ -200,4 +212,13 @@ if __name__ == "__main__":
     model = Model(model_path='/home/zaferpc/abb_ws/src/perception/models/',
                   image_topic='/camera/color/image_raw',
                   cutting_plan_topic="/cutting_path")
-    model.generate_and_publish_cover_cutting_path()
+
+    # Recieve an image msg from camera topic and return detections.
+    image, detections = model.recieve_and_detect()
+
+    # Generate the cover cutting path from given detections.
+    cut_path = model.generate_cover_cutting_path(image, detections, min_screw_score=0)
+
+    # Publish the generated cutting path if not empty.
+    if cut_path is not None:
+        model.publish_cut_path(cut_path)
