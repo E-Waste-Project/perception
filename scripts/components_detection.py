@@ -145,7 +145,12 @@ class Model:
         else:
             return boxes
     
-    def generate_cover_cutting_path(self, image, detections, min_screw_score=0):
+    def generate_cover_cutting_path(self,
+                                    image,
+                                    detections,
+                                    min_screw_score=0,
+                                    tol=100,
+                                    min_hole_dist=3):
         """Waits for an image msg from camera topic, then applies detection model
         to get the detected classes, finally generate a cutting path and publish it.
 
@@ -172,8 +177,10 @@ class Model:
         
         # Get Cutting Path.
         cut_path = plan_cover_cutting_path(laptop_coords=best_cover_box,
-                                        holes_coords=screw_boxes,
-                                        method=1, interpolate=True, interp_step=2, tol=100, min_hole_dist=3)
+                                           holes_coords=screw_boxes,
+                                           method=1,
+                                           interpolate=True, interp_step=2,
+                                           tol=tol, min_hole_dist=min_hole_dist)
         
         image_np = np.copy(image)
 
@@ -221,8 +228,10 @@ if __name__ == "__main__":
     # Recieve an image msg from camera topic, then, return image and detections.
     image, detections = model.recieve_and_detect()
 
-    # Generate the cover cutting path from given detections and visualise on image.
-    cut_path = model.generate_cover_cutting_path(image, detections, min_screw_score=0)
+    # Generate the cover cutting path from given detections and image to visulaise on.
+    cut_path = model.generate_cover_cutting_path(image, detections,
+                                                 min_screw_score=0,
+                                                 tol=100, min_hole_dist=3) # generated path params
 
     # Publish the generated cutting path if not empty.
     if cut_path is not None:
