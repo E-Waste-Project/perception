@@ -205,6 +205,8 @@ class Model:
         cv2.imshow("image_window", image_np)
         key = cv2.waitKey(0) & 0xFF
         
+        cv2.destroyAllWindows()
+
         if key == ord('e'):
             return
         
@@ -230,19 +232,23 @@ if __name__ == "__main__":
                   image_topic='/camera/color/image_raw',
                   cutting_plan_topic="/cutting_path")
 
-    # Recieve an image msg from camera topic, then, return image and detections.
-    image, detections = model.recieve_and_detect()
+    while not rospy.is_shutdown():
+        # Recieve an image msg from camera topic, then, return image and detections.
+        image, detections = model.recieve_and_detect()
 
-    # Generate the cover cutting path from given detections and image to visulaise on.
-    cut_path, screw_holes = model.generate_cover_cutting_path(image, detections,
-                                                 min_screw_score=0,
-                                                 tol=100, min_hole_dist=3) # generated path params
+        # Generate the cover cutting path from given detections and image to visulaise on.
+        cut_path, screw_holes = model.generate_cover_cutting_path(image, detections,
+                                                    min_screw_score=0,
+                                                    tol=100, min_hole_dist=3) # generated path params
 
-    # Publish the generated cutting path if not empty.
-    if screw_holes is not None and publish_screw_centers:
-        screw_centers = [(sh[0] + (sh[2] // 2), sh[1] + (sh[3] // 2)) for sh in screw_holes]
-        model.publish_cut_path(screw_centers)
+        # Publish the generated cutting path if not empty.
+        if screw_holes is not None and publish_screw_centers:
+            screw_centers = [(sh[0] + (sh[2] // 2), sh[1] + (sh[3] // 2)) for sh in screw_holes]
+            model.publish_cut_path(screw_centers)
 
-    # Publish the generated cutting path if not empty.
-    if cut_path is not None and publish_cut_path:
-        model.publish_cut_path(cut_path)
+        # Publish the generated cutting path if not empty.
+        if cut_path is not None and publish_cut_path:
+            model.publish_cut_path(cut_path)
+        
+        print("Input Any Key to Continue")
+        input()
