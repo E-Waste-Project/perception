@@ -119,7 +119,7 @@ class Model:
         detections['detection_boxes'][:, 1] *= image_np.shape[1]
         detections['detection_boxes'][:, 3] *= image_np.shape[1]
         
-        return image, detections
+        return image_np, detections
     
     def get_class_detections(self, detections, class_name,
                              format=('x1', 'y1', 'w', 'h'),
@@ -195,7 +195,7 @@ class Model:
                 cv2.rectangle(image_np, tuple(screw_box[0:2]),
                         (screw_box[0] + screw_box[2], screw_box[1] + screw_box[3]), (0, 0, 255), 2)
                 cv2.circle(
-                    image_np, (screw_box[0] + screw_box[2] / 2, screw_box[1] + screw_box[3] / 2), 1, (0, 0, 255), 2)
+                    image_np, (screw_box[0] + screw_box[2] // 2, screw_box[1] + screw_box[3] // 2), 1, (0, 0, 255), 2)
         
         # Visualise the cutting path.
         for i in range(len(cut_path) - 1):
@@ -240,7 +240,7 @@ if __name__ == "__main__":
 
     # Publish the generated cutting path if not empty.
     if screw_holes is not None and publish_screw_centers:
-        screw_centers = [(x + (w / 2), y + (h / 2)) for screw_hole in screw_holes for x,y,w,h in screw_hole]
+        screw_centers = [(sh[0] + (sh[2] // 2), sh[1] + (sh[3] // 2)) for sh in screw_holes]
         model.publish_cut_path(screw_centers)
 
     # Publish the generated cutting path if not empty.
