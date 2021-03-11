@@ -193,7 +193,9 @@ class Model:
         for screw_box in screw_boxes:
             for i in range(len(screw_box) - 1):
                 cv2.rectangle(image_np, tuple(screw_box[0:2]),
-                        (screw_box[0] + screw_box[2], screw_box[1] + screw_box[3]), (0, 0, 255), 2)   
+                        (screw_box[0] + screw_box[2], screw_box[1] + screw_box[3]), (0, 0, 255), 2)
+                cv2.circle(
+                    image_np, (screw_box[0] + screw_box[2] / 2, screw_box[1] + screw_box[3] / 2), 1, (0, 0, 255), 2)
         
         # Visualise the cutting path.
         for i in range(len(cut_path) - 1):
