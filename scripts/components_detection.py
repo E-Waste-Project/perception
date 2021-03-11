@@ -206,7 +206,7 @@ class Model:
         if key == ord('e'):
             return
         
-        return cut_path
+        return cut_path, screw_boxes
 
     def publish_cut_path(self, cut_path):
         # Publish Cutting Path.
@@ -221,6 +221,9 @@ if __name__ == "__main__":
     
     rospy.init_node("components_detection")
 
+    publish_cut_path = False
+    publish_screw_centers = True
+
     model = Model(model_path='/home/zaferpc/abb_ws/src/perception/models/',
                   image_topic='/camera/color/image_raw',
                   cutting_plan_topic="/cutting_path")
@@ -229,10 +232,15 @@ if __name__ == "__main__":
     image, detections = model.recieve_and_detect()
 
     # Generate the cover cutting path from given detections and image to visulaise on.
-    cut_path = model.generate_cover_cutting_path(image, detections,
+    cut_path, screw_holes = model.generate_cover_cutting_path(image, detections,
                                                  min_screw_score=0,
                                                  tol=100, min_hole_dist=3) # generated path params
 
     # Publish the generated cutting path if not empty.
-    if cut_path is not None:
+    if screw_holes is not None and publish_screw_centers:
+        screw_centers = [(x + (w / 2), y + (h / 2)) for screw_hole in screw_holes for x,y,w,h in screw_hole]
+        model.publish_cut_path(screw_centers)
+
+    # Publish the generated cutting path if not empty.
+    if cut_path is not None and publish_cut_path:
         model.publish_cut_path(cut_path)
