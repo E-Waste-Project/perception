@@ -11,7 +11,7 @@ import time
 import warnings
 warnings.filterwarnings('ignore')   # Suppress Matplotlib warnings
 
-from perception.laptop_perception_helpers import plan_cover_cutting_path
+from perception.laptop_perception_helpers import plan_cover_cutting_path, adjust_hole_center
 from perception.coco_datasets import convert_format
 import cv2
 
@@ -226,7 +226,7 @@ if __name__ == "__main__":
     rospy.init_node("components_detection")
 
     publish_cut_path = False
-    publish_screw_centers = True
+    publish_screw_centers = False
 
     model = Model(model_path='/home/zaferpc/abb_ws/src/perception/models/',
                   image_topic='/camera/color/image_raw',
@@ -241,6 +241,8 @@ if __name__ == "__main__":
                                                     min_screw_score=0,
                                                     tol=100, min_hole_dist=3) # generated path params
 
+        screw_centers = adjust_hole_center(image, screw_holes)
+        
         # Publish the generated cutting path if not empty.
         if screw_holes is not None and publish_screw_centers:
             screw_centers = [(sh[0] + (sh[2] // 2), sh[1] + (sh[3] // 2)) for sh in screw_holes]

@@ -30,6 +30,14 @@ class Rect:
         self.y += y
         self.y2 += y
     
+    def enlarge_by(self, val):
+        self.x -= val
+        self.y -= val
+        self.w += 2*val
+        self.h += 2*val
+        self.x2 += val
+        self.y2 += val
+    
     def add(self, rect):
         self.shift_by(rect.x, rect.y)
 
@@ -437,10 +445,6 @@ def interpolate_path(path, step=2):
         new_path.append((x2, y2))
     return new_path
         
-        
-        
-
-
 def plan_cover_cutting_path(input_img=None, tol=30, min_hole_dist=5, draw_on=None,
  laptop_coords=None, holes_coords=None, method=0, interpolate=True, interp_step=2):
     """Takes gray_scale img containing a laptop Or takes laptop & holes coordinates,
@@ -525,6 +529,45 @@ def plan_cover_cutting_path(input_img=None, tol=30, min_hole_dist=5, draw_on=Non
         # detect_holes(cropped_gray, draw_on=cropped_img)
         
     return cut_path
+
+def adjust_hole_center(image, hole_boxes):
+    output = image.copy()
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    # k = 2 * 16 - 1
+    # c = 2
+    # gray = preprocess(gray, gauss_kernel=k, clahe_kernel=c)
+    new_hole_centers = []
+    for i, hole in enumerate(hole_boxes):
+        rect_hole = Rect(*hole)
+        rect_hole.enlarge_by(5)
+        gray_crop = rect_hole.crop_img(gray)
+        cv2.imwrite("/home/zaferpc/hole_{}.jpg".format(i), gray_crop)
+        continue
+        # show the output image
+        cv2.imshow("gray_crop", gray_crop)
+        cv2.waitKey(0)
+        # detect circles in the image
+        circles = cv2.HoughCircles(gray_crop, cv2.HOUGH_GRADIENT, 1.01, 1, 200, 100)
+        # ensure at least some circles were found
+        if circles is not None:
+            # convert the (x, y) coordinates and radius of the circles to integers
+            circles = np.round(circles[0, :]).astype("int")
+            # loop over the (x, y) coordinates and radius of the circles
+            for (x, y, r) in circles:
+                # draw the circle in the output image, then draw a rectangle
+                # corresponding to the center of the circle
+                x += rect_hole.x
+                y += rect_hole.y
+                prev_x = rect_hole.x + (rect_hole.w // 2)
+                prev_y = rect_hole.y + (rect_hole.h // 2)
+                cv2.circle(output, (prev_x, prev_y), 1, (0, 0, 255), 1)
+                cv2.circle(output, (x, y), 1, (0, 255, 0), 1)
+                # cv2.rectangle(output, (x - 1, y - 1), (x + 1, y + 1), (0, 128, 255), -1)
+                new_hole_centers.append([x,y])
+            # show the output image
+            cv2.imshow("output", output)
+            cv2.waitKey(0)
+    return new_hole_centers
 
 
 if __name__ == "__main__":
