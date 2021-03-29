@@ -428,6 +428,8 @@ def custom_path_method(holes_coords, left, right, upper, lower, min_hole_dist):
     return cut_path
 
 def interpolate(p1, p2, step):
+    if p2 == p1:
+        return [p1]
     sign = int(abs(p2-p1) / (p2-p1))
     return list(range(p1, p2, step * sign))
 
