@@ -178,8 +178,8 @@ class Model:
         # Get Cutting Path.
         cut_path = plan_cover_cutting_path(laptop_coords=best_cover_box,
                                            holes_coords=screw_boxes,
-                                           method=1,
-                                           interpolate=True, interp_step=2,
+                                           method=0,
+                                           interpolate=True, interp_step=4,
                                            tol=tol, min_hole_dist=min_hole_dist)
         
         image_np = np.copy(image)
@@ -208,7 +208,7 @@ class Model:
         cv2.destroyAllWindows()
 
         if key == ord('e'):
-            return
+            return None, None
         
         return cut_path, screw_boxes
 
@@ -238,8 +238,8 @@ if __name__ == "__main__":
 
         # Generate the cover cutting path from given detections and image to visulaise on.
         cut_path, screw_holes = model.generate_cover_cutting_path(image, detections,
-                                                    min_screw_score=0,
-                                                    tol=100, min_hole_dist=3) # generated path params
+                                                                  min_screw_score=0,
+                                                                  tol=50, min_hole_dist=20) # generated path params
 
         # screw_centers = adjust_hole_center(image, screw_holes)
         
