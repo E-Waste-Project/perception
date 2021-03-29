@@ -44,7 +44,7 @@ class Subscribers():
         #print(contour_indices)
         contour_xyz = dist_mat[:, contour_indices[:, 0], contour_indices[:, 1]]
         pose_msg = PoseArray()
-        pose_msg.header.frame_id = "camera_start"
+        pose_msg.header.frame_id = "camera_color_optical_frame"
         pose_msg.header.stamp = rospy.Time.now()
         pose_msg.poses = []
         print(contour_xyz.shape)
@@ -60,7 +60,10 @@ class Subscribers():
             pose.position.y = contour_xyz[0, point_num]
             self.y_list.append(pose.position.y)
             pose.position.z = contour_xyz[2, point_num]
-            # pose.orientation.w = 1
+            pose.orientation.w = 1
+            pose.orientation.x = 0
+            pose.orientation.y = 0
+            pose.orientation.z = 0
             pose_msg.poses.append(pose)
         # plt.plot(self.x_list,self.y_list)
         # plt.show(block=False)
