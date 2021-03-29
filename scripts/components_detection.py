@@ -226,7 +226,7 @@ if __name__ == "__main__":
     rospy.init_node("components_detection")
 
     publish_cut_path = False
-    publish_screw_centers = False
+    publish_screw_centers = True
 
     model = Model(model_path='/home/zaferpc/abb_ws/src/perception/models/',
                   image_topic='/camera/color/image_raw',
@@ -241,7 +241,7 @@ if __name__ == "__main__":
                                                     min_screw_score=0,
                                                     tol=100, min_hole_dist=3) # generated path params
 
-        screw_centers = adjust_hole_center(image, screw_holes)
+        # screw_centers = adjust_hole_center(image, screw_holes)
         
         # Publish the generated cutting path if not empty.
         if screw_holes is not None and publish_screw_centers:

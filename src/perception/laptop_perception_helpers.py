@@ -74,8 +74,9 @@ def aspect_ratio(cnt):
 
 def read_and_resize(directory, img_id, size=(720, 480), compression='.jpg'):
     read_img = cv2.imread(directory + str(img_id) + compression)
-    resized_img = cv2.resize(read_img, size)
-    return resized_img
+    if size is not None:
+        read_img = cv2.resize(read_img, size)
+    return read_img
 
 
 def preprocess(input_img, gauss_kernel=21, clahe_kernel=2,
@@ -532,20 +533,19 @@ def plan_cover_cutting_path(input_img=None, tol=30, min_hole_dist=5, draw_on=Non
 
 def adjust_hole_center(image, hole_boxes):
     output = image.copy()
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    # gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     # k = 2 * 16 - 1
     # c = 2
     # gray = preprocess(gray, gauss_kernel=k, clahe_kernel=c)
     new_hole_centers = []
     for i, hole in enumerate(hole_boxes):
         rect_hole = Rect(*hole)
-        rect_hole.enlarge_by(5)
-        gray_crop = rect_hole.crop_img(gray)
-        cv2.imwrite("/home/zaferpc/hole_{}.jpg".format(i), gray_crop)
-        continue
-        # show the output image
-        cv2.imshow("gray_crop", gray_crop)
-        cv2.waitKey(0)
+        # rect_hole.enlarge_by(5)
+        # gray_crop = rect_hole.crop_img(gray)
+        # # show the output image
+        # cv2.imshow("gray_crop", gray_crop)
+        # cv2.waitKey(0)
+        gray_crop = output
         # detect circles in the image
         circles = cv2.HoughCircles(gray_crop, cv2.HOUGH_GRADIENT, 1.01, 1, 200, 100)
         # ensure at least some circles were found
