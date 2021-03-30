@@ -10,49 +10,94 @@ import tensorflow as tf
 import time
 import warnings
 warnings.filterwarnings('ignore')   # Suppress Matplotlib warnings
+import sys
 
 from perception.laptop_perception_helpers import plan_cover_cutting_path, adjust_hole_center
 from perception.coco_datasets import convert_format
+from perception.yolo_detector import Yolo
 import cv2
 
 
 class Model:
     def __init__(self,
+                 model_type='ssd',
                  model_path='/home/zaferpc/abb_ws/src/perception/models/',
                  image_topic='/camera/color/image_raw',
-                 cutting_plan_topic='/cutting_path'):
+                 cutting_plan_topic='/cutting_path',
+                 imgsz=1920):
         
-        PATH_TO_MODEL_DIR = model_path + 'saved_model'
-        PATH_TO_LABELS = model_path + 'label_map.pbtxt'
+        self.model_type = model_type
+        if model_type == 'ssd':
 
-        print('Loading model... ', end='')
-        start_time = time.time()
+            PATH_TO_MODEL_DIR = model_path + 'saved_model'
+            PATH_TO_LABELS = model_path + 'label_map.pbtxt'
 
-        # Load the save tensorflow model.
-        self.detect_fn = tf.saved_model.load(PATH_TO_MODEL_DIR) 
-        
-        end_time = time.time()
-        elapsed_time = end_time - start_time
-        print('Done! Took {} seconds'.format(elapsed_time))
+            print('Loading model... ', end='')
+            start_time = time.time()
+
+            # Load the save tensorflow model.
+            model = tf.saved_model.load(PATH_TO_MODEL_DIR) 
+
+            def detect_fn(image_np):
+                # The input needs to be a tensor, convert it using `tf.convert_to_tensor`.
+                input_tensor = tf.convert_to_tensor(image_np)
+                # The model expects a batch of images, so add an axis with `tf.newaxis`.
+                input_tensor = input_tensor[tf.newaxis, ...]
+
+                detections = model(input_tensor)
+                # All outputs are batches tensors.
+                # Convert to numpy arrays, and take index [0] to remove the batch dimension.
+                # We're only interested in the first num_detections.
+                num_detections = int(detections.pop('num_detections'))
+                detections = {key: threshue[0, :num_detections].numpy()
+                            for key, threshue in detections.items()}
+                detections['num_detections'] = num_detections
+                return detections
+
+            self.detect_fn = detect_fn
+            
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            print('Done! Took {} seconds'.format(elapsed_time))
+
+            # define class thresholds, ids, and names.
+            self.class_thresh = {
+                'Battery':           {'thresh': 0.5, 'id': 1},
+                'Connector':         {'thresh': 0.2, 'id': 2},
+                'CPU':               {'thresh': 0.8, 'id': 3},
+                'Fan':               {'thresh': 0.8, 'id': 4},
+                'Hard Disk':         {'thresh': 0.5, 'id': 5},
+                'Motherboard':       {'thresh': 0.8, 'id': 6},
+                'RAM':               {'thresh': 0.7, 'id': 7},
+                'Screw':             {'thresh': 0.2, 'id': 8},
+                'SSD':               {'thresh': 0.8, 'id': 9},
+                'WLAN':              {'thresh': 0.7, 'id': 10},
+                'CD-ROM':            {'thresh': 0.5, 'id': 11},
+                'Laptop_Back_Cover': {'thresh': 0.92, 'id': 12}
+            }
+
+        elif model_type == 'yolo':
+            PATH_TO_MODEL_DIR = model_path + 'last.pt'
+            self.detect_fn = Yolo(PATH_TO_MODEL_DIR, imgsz).detect
+            # define class thresholds, ids, and names.
+            self.class_thresh = {
+                'Connector':         {'thresh': 0.2, 'id': 0},
+                'CPU':               {'thresh': 0.8, 'id': 1},
+                'Fan':               {'thresh': 0.8, 'id': 2},
+                'Hard Disk':         {'thresh': 0.5, 'id': 3},
+                'Motherboard':       {'thresh': 0.8, 'id': 4},
+                'RAM':               {'thresh': 0.7, 'id': 5},
+                'Screw':             {'thresh': 0.2, 'id': 6},
+                'SSD':               {'thresh': 0.8, 'id': 7},
+                'Battery':           {'thresh': 0.5, 'id': 8},
+                'WLAN':              {'thresh': 0.7, 'id': 9},
+                'CD-ROM':            {'thresh': 0.5, 'id': 10},
+                'Laptop_Back_Cover': {'thresh': 0.92, 'id': 11}
+            }
 
         self.image_topic = image_topic
         self.image = None
 
-        # define class thresholds, ids, and names.
-        self.class_thresh = {
-            'Battery':           {'thresh': 0.5, 'id': 1},
-            'Connector':         {'thresh': 0.2, 'id': 2},
-            'CPU':               {'thresh': 0.8, 'id': 3},
-            'Fan':               {'thresh': 0.8, 'id': 4},
-            'Hard Disk':         {'thresh': 0.5, 'id': 5},
-            'Motherboard':       {'thresh': 0.8, 'id': 6},
-            'RAM':               {'thresh': 0.7, 'id': 7},
-            'Screw':             {'thresh': 0.2, 'id': 8},
-            'SSD':               {'thresh': 0.8, 'id': 9},
-            'WLAN':              {'thresh': 0.7, 'id': 10},
-            'CD-ROM':            {'thresh': 0.5, 'id': 11},
-            'Laptop_Back_Cover': {'thresh': 0.92, 'id': 12}
-        }
 
         # dictionary to convert class id to class name
         self.cid_to_cname = {vals['id']: cname for cname, vals in self.class_thresh.items()}
@@ -77,27 +122,17 @@ class Model:
             detections['detection_scores'], indicies_to_remove)
     
     def recieve_and_detect(self):
-        # Wait for rgb camera stream to publish a frame.
-        image_msg = rospy.wait_for_message(self.image_topic, Image)
+        # # Wait for rgb camera stream to publish a frame.
+        # image_msg = rospy.wait_for_message(self.image_topic, Image)
         
-        # Convert msg to numpy image.
-        image_np = numpify(image_msg)
+        # # Convert msg to numpy image.
+        # image_np = numpify(image_msg)
 
-        # The input needs to be a tensor, convert it using `tf.convert_to_tensor`.
-        input_tensor = tf.convert_to_tensor(image_np)
-        # The model expects a batch of images, so add an axis with `tf.newaxis`.
-        input_tensor = input_tensor[tf.newaxis, ...]
+        image_np = img = cv2.imread(
+            '/home/abdelrhman/bag_files/laptop_back_cover/exp_1500_no_direct_light_full_hd/imgs/1.jpg')
 
         # Run forward prop of model to get the detections.
-        detections = self.detect_fn(input_tensor)
-
-        # All outputs are batches tensors.
-        # Convert to numpy arrays, and take index [0] to remove the batch dimension.
-        # We're only interested in the first num_detections.
-        num_detections = int(detections.pop('num_detections'))
-        detections = {key: threshue[0, :num_detections].numpy()
-                      for key, threshue in detections.items()}
-        detections['num_detections'] = num_detections
+        detections = self.detect_fn(image_np)
 
         # detection_classes should be ints.
         detections['detection_classes'] = detections['detection_classes'].astype(
@@ -225,12 +260,15 @@ if __name__ == "__main__":
     
     rospy.init_node("components_detection")
 
+    sys.path.insert(
+        0, '/home/abdelrhman/TensorFlow/workspace/yolov5')
+
     publish_cut_path = False
     publish_screw_centers = True
 
-    model = Model(model_path='/home/zaferpc/abb_ws/src/perception/models/',
+    model = Model(model_path='/home/abdelrhman/ewaste_ws/src/perception/models/',
                   image_topic='/camera/color/image_raw',
-                  cutting_plan_topic="/cutting_path")
+                  cutting_plan_topic="/cutting_path", model_type='yolo')
 
     while not rospy.is_shutdown():
         # Recieve an image msg from camera topic, then, return image and detections.

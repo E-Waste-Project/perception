@@ -80,15 +80,19 @@ class Yolo:
                     n = (det[:, -1] == c).sum()  # detections per class
                     s += f'{n} {names[int(c)]}s, '  # add to string
 
-                detections['detection_classes'] = []
-                detections['detection_boxes'] = []
-                detections['detection_scores'] = []
+                detection_classes = []
+                detection_boxes = []
+                detection_scores = []
                 for *xyxy, conf, cls in reversed(det):
-                    xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)
-                                      ) / gn).view(-1).tolist()  # normalized xywh
-                    detections['detection_boxes'].append(xywh)
-                    detections['detection_scores'].append(conf)
-                    detections['detection_classes'].append(cls)
+                    box = (torch.tensor(xyxy).view(1, 4)
+                                      / gn).view(-1).tolist()  # normalized xywh
+                    box_yxyx = [box[1], box[0], box[3], box[2]]
+                    detection_boxes.append(box_yxyx)
+                    detection_scores.append(conf)
+                    detection_classes.append(cls)
+                detections['detection_boxes'] = np.array(detection_boxes)
+                detections['detection_scores'] = np.array(detection_scores)
+                detections['detection_classes'] = np.array(detection_classes)
 
             # Print time (inference + NMS)
             print(f'{s}Done. ({t2 - t1:.3f}s)')
@@ -98,16 +102,16 @@ class Yolo:
 
 if __name__ == "__main__":
     model = Yolo(
-        '/home/abdelrhman/TensorFlow/workspace/yolov5/runs/train/exp4/weights/last.pt', 832)
+        '/home/abdelrhman/TensorFlow/workspace/yolov5/runs/train/exp4/weights/last.pt', 1920)
     img = cv2.imread(
         '/home/abdelrhman/bag_files/laptop_components/exp_1500_no_direct_light_full_hd/imgs/1.jpg')
     detections = model.detect(img)
     for i, box in enumerate(detections['detection_boxes']):
         if detections['detection_classes'][i] != 6:
             continue
-        box = [box[0] * img.shape[1], box[1] *
-               img.shape[0], box[2] * img.shape[1], box[3] * img.shape[0]]
+        box = [box[1] * img.shape[1], box[0] *
+               img.shape[0], box[3] * img.shape[1], box[2] * img.shape[0]]
         box = [int(b) for b in box]
-        cv2.rectangle(img, (box[0]-box[2]//2, box[1]-box[3]//2), (box[0]+box[2]//2, box[1]+box[3]//2), (255, 0, 0), 2)
+        cv2.rectangle(img, (box[0], box[1]), (box[2], box[3]), (255, 0, 0), 2)
     cv2.imshow('detections', img)
     cv2.waitKey(0)
