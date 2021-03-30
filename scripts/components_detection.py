@@ -123,13 +123,13 @@ class Model:
     
     def recieve_and_detect(self):
         # # Wait for rgb camera stream to publish a frame.
-        # image_msg = rospy.wait_for_message(self.image_topic, Image)
+        image_msg = rospy.wait_for_message(self.image_topic, Image)
         
-        # # Convert msg to numpy image.
-        # image_np = numpify(image_msg)
+        # Convert msg to numpy image.
+        image_np = numpify(image_msg)
 
-        image_np = img = cv2.imread(
-            '/home/abdelrhman/bag_files/laptop_back_cover/exp_1500_no_direct_light_full_hd/imgs/1.jpg')
+        # image_np = img = cv2.imread(
+        #     '/home/abdelrhman/bag_files/laptop_back_cover/exp_1500_no_direct_light_full_hd/imgs/1.jpg')
 
         # Run forward prop of model to get the detections.
         detections = self.detect_fn(image_np)
