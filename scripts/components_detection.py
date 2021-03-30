@@ -24,7 +24,7 @@ class Model:
                  model_path='/home/zaferpc/abb_ws/src/perception/models/',
                  image_topic='/camera/color/image_raw',
                  cutting_plan_topic='/cutting_path',
-                 imgsz=1920):
+                 imgsz=1280):
         
         self.model_type = model_type
         if model_type == 'ssd':
@@ -92,7 +92,7 @@ class Model:
                 'Battery':           {'thresh': 0.5, 'id': 8},
                 'WLAN':              {'thresh': 0.7, 'id': 9},
                 'CD-ROM':            {'thresh': 0.5, 'id': 10},
-                'Laptop_Back_Cover': {'thresh': 0.92, 'id': 11}
+                'Laptop_Back_Cover': {'thresh': 0.5, 'id': 11}
             }
 
         self.image_topic = image_topic
@@ -129,7 +129,7 @@ class Model:
         image_np = numpify(image_msg)
 
         # image_np = img = cv2.imread(
-        #     '/home/abdelrhman/bag_files/laptop_back_cover/exp_1500_no_direct_light_full_hd/imgs/1.jpg')
+        #     '/home/zaferpc/TensorFlow/workspace/training_demo/images/test/1.jpg')
 
         # Run forward prop of model to get the detections.
         detections = self.detect_fn(image_np)
@@ -261,14 +261,14 @@ if __name__ == "__main__":
     rospy.init_node("components_detection")
 
     sys.path.insert(
-        0, '/home/abdelrhman/TensorFlow/workspace/yolov5')
+        0, '/home/zaferpc/TensorFlow/workspace/yolov5')
 
     publish_cut_path = False
     publish_screw_centers = True
 
-    model = Model(model_path='/home/abdelrhman/ewaste_ws/src/perception/models/',
+    model = Model(model_path='/home/zaferpc/abb_ws/src/perception/models/',
                   image_topic='/camera/color/image_raw',
-                  cutting_plan_topic="/cutting_path", model_type='yolo')
+                  cutting_plan_topic="/cutting_path", model_type='yolo', imgsz=832)
 
     while not rospy.is_shutdown():
         # Recieve an image msg from camera topic, then, return image and detections.
@@ -277,7 +277,7 @@ if __name__ == "__main__":
         # Generate the cover cutting path from given detections and image to visulaise on.
         cut_path, screw_holes = model.generate_cover_cutting_path(image, detections,
                                                                   min_screw_score=0,
-                                                                  tol=50, min_hole_dist=20) # generated path params
+                                                                  tol=50, min_hole_dist=5) # generated path params
 
         # screw_centers = adjust_hole_center(image, screw_holes)
         
