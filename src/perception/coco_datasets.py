@@ -400,10 +400,12 @@ class CocoDataset():
             with open(directory + img_name[:-3] + "txt", "w") as file: 
                 file.writelines(formated_string_labels)
                 
-    def read_labels_from_files(self, directory, out_format=('x1', 'y1', 'w', 'h'),
+    def read_labels_from_files(self, directory, in_format=None, out_format=('x1', 'y1', 'w', 'h'),
     isrel=False, has_conf=True, add_conf=False, box_formatter=lambda x: float(x)):
         classes_names = {val['id'] - 1: val['name'] for val in self.categories.values()}
         all_imgs_labels = {}
+        if in_format is None:
+            in_format = out_format
         for filename in os.listdir(directory):
             if not filename.endswith(".txt"):
                 continue
@@ -411,20 +413,23 @@ class CocoDataset():
             # first get all lines from file
             with open(directory + filename, 'r') as f:
                 lines = f.readlines()
-
-            # remove spaces
             img_labels = {}
             for line in lines:
+                # remove spaces
                 label = line.replace('\n', '').split(sep=' ')
                 cname = classes_names[int(label[0])]
                 if cname not in img_labels:
                     img_labels[cname] = []
-                if has_conf:
-                    img_labels[cname].append(box_formatter(label[1:-1]))
-                    if add_conf:
-                        img_labels[cname][-1].append(float(label[-1]))
-                else:
-                    img_labels[cname].append(box_formatter(label[1:]))
+                
+                new_box = label[1:-1] if has_conf else label[1:]
+                new_box = convert_format(new_box,
+                                         in_format=in_format,
+                                         out_format=out_format)
+                new_box = box_formatter(new_box)
+                img_labels[cname].append(new_box)
+                if add_conf:
+                    img_labels[cname][-1].append(float(label[-1]))
+
             all_imgs_labels[imgname] = img_labels
         self.all_imgs_labels = dict(collections.OrderedDict(
             sorted(all_imgs_labels.items(), key=lambda x: int(x[0][:-4]))))
@@ -466,7 +471,6 @@ class CocoDataset():
                 all_imgs_labels[img][id].append(new_box)
             img_id += 1
         return all_imgs_labels
-
         
         
 
