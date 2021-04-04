@@ -10,49 +10,94 @@ import tensorflow as tf
 import time
 import warnings
 warnings.filterwarnings('ignore')   # Suppress Matplotlib warnings
+import sys
 
-from perception.laptop_perception_helpers import plan_cover_cutting_path
+from perception.laptop_perception_helpers import plan_cover_cutting_path, adjust_hole_center
 from perception.coco_datasets import convert_format
+from perception.yolo_detector import Yolo
 import cv2
 
 
 class Model:
     def __init__(self,
+                 model_type='ssd',
                  model_path='/home/zaferpc/abb_ws/src/perception/models/',
                  image_topic='/camera/color/image_raw',
-                 cutting_plan_topic='/cutting_path'):
+                 cutting_plan_topic='/cutting_path',
+                 imgsz=1280):
         
-        PATH_TO_MODEL_DIR = model_path + 'saved_model'
-        PATH_TO_LABELS = model_path + 'label_map.pbtxt'
+        self.model_type = model_type
+        if model_type == 'ssd':
 
-        print('Loading model... ', end='')
-        start_time = time.time()
+            PATH_TO_MODEL_DIR = model_path + 'saved_model'
+            PATH_TO_LABELS = model_path + 'label_map.pbtxt'
 
-        # Load the save tensorflow model.
-        self.detect_fn = tf.saved_model.load(PATH_TO_MODEL_DIR) 
-        
-        end_time = time.time()
-        elapsed_time = end_time - start_time
-        print('Done! Took {} seconds'.format(elapsed_time))
+            print('Loading model... ', end='')
+            start_time = time.time()
+
+            # Load the save tensorflow model.
+            model = tf.saved_model.load(PATH_TO_MODEL_DIR) 
+
+            def detect_fn(image_np):
+                # The input needs to be a tensor, convert it using `tf.convert_to_tensor`.
+                input_tensor = tf.convert_to_tensor(image_np)
+                # The model expects a batch of images, so add an axis with `tf.newaxis`.
+                input_tensor = input_tensor[tf.newaxis, ...]
+
+                detections = model(input_tensor)
+                # All outputs are batches tensors.
+                # Convert to numpy arrays, and take index [0] to remove the batch dimension.
+                # We're only interested in the first num_detections.
+                num_detections = int(detections.pop('num_detections'))
+                detections = {key: threshue[0, :num_detections].numpy()
+                            for key, threshue in detections.items()}
+                detections['num_detections'] = num_detections
+                return detections
+
+            self.detect_fn = detect_fn
+            
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            print('Done! Took {} seconds'.format(elapsed_time))
+
+            # define class thresholds, ids, and names.
+            self.class_thresh = {
+                'Battery':           {'thresh': 0.5, 'id': 1},
+                'Connector':         {'thresh': 0.2, 'id': 2},
+                'CPU':               {'thresh': 0.8, 'id': 3},
+                'Fan':               {'thresh': 0.8, 'id': 4},
+                'Hard Disk':         {'thresh': 0.5, 'id': 5},
+                'Motherboard':       {'thresh': 0.8, 'id': 6},
+                'RAM':               {'thresh': 0.7, 'id': 7},
+                'Screw':             {'thresh': 0.2, 'id': 8},
+                'SSD':               {'thresh': 0.8, 'id': 9},
+                'WLAN':              {'thresh': 0.7, 'id': 10},
+                'CD-ROM':            {'thresh': 0.5, 'id': 11},
+                'Laptop_Back_Cover': {'thresh': 0.92, 'id': 12}
+            }
+
+        elif model_type == 'yolo':
+            PATH_TO_MODEL_DIR = model_path + 'last.pt'
+            self.detect_fn = Yolo(PATH_TO_MODEL_DIR, imgsz).detect
+            # define class thresholds, ids, and names.
+            self.class_thresh = {
+                'Connector':         {'thresh': 0.2, 'id': 0},
+                'CPU':               {'thresh': 0.8, 'id': 1},
+                'Fan':               {'thresh': 0.8, 'id': 2},
+                'Hard Disk':         {'thresh': 0.5, 'id': 3},
+                'Motherboard':       {'thresh': 0.8, 'id': 4},
+                'RAM':               {'thresh': 0.7, 'id': 5},
+                'Screw':             {'thresh': 0.2, 'id': 6},
+                'SSD':               {'thresh': 0.8, 'id': 7},
+                'Battery':           {'thresh': 0.5, 'id': 8},
+                'WLAN':              {'thresh': 0.7, 'id': 9},
+                'CD-ROM':            {'thresh': 0.5, 'id': 10},
+                'Laptop_Back_Cover': {'thresh': 0.5, 'id': 11}
+            }
 
         self.image_topic = image_topic
         self.image = None
 
-        # define class thresholds, ids, and names.
-        self.class_thresh = {
-            'Battery':           {'thresh': 0.5, 'id': 1},
-            'Connector':         {'thresh': 0.2, 'id': 2},
-            'CPU':               {'thresh': 0.8, 'id': 3},
-            'Fan':               {'thresh': 0.8, 'id': 4},
-            'Hard Disk':         {'thresh': 0.5, 'id': 5},
-            'Motherboard':       {'thresh': 0.8, 'id': 6},
-            'RAM':               {'thresh': 0.7, 'id': 7},
-            'Screw':             {'thresh': 0.2, 'id': 8},
-            'SSD':               {'thresh': 0.8, 'id': 9},
-            'WLAN':              {'thresh': 0.7, 'id': 10},
-            'CD-ROM':            {'thresh': 0.5, 'id': 11},
-            'Laptop_Back_Cover': {'thresh': 0.92, 'id': 12}
-        }
 
         # dictionary to convert class id to class name
         self.cid_to_cname = {vals['id']: cname for cname, vals in self.class_thresh.items()}
@@ -77,27 +122,17 @@ class Model:
             detections['detection_scores'], indicies_to_remove)
     
     def recieve_and_detect(self):
-        # Wait for rgb camera stream to publish a frame.
+        # # Wait for rgb camera stream to publish a frame.
         image_msg = rospy.wait_for_message(self.image_topic, Image)
         
         # Convert msg to numpy image.
         image_np = numpify(image_msg)
 
-        # The input needs to be a tensor, convert it using `tf.convert_to_tensor`.
-        input_tensor = tf.convert_to_tensor(image_np)
-        # The model expects a batch of images, so add an axis with `tf.newaxis`.
-        input_tensor = input_tensor[tf.newaxis, ...]
+        # image_np = img = cv2.imread(
+        #     '/home/zaferpc/TensorFlow/workspace/training_demo/images/test/1.jpg')
 
         # Run forward prop of model to get the detections.
-        detections = self.detect_fn(input_tensor)
-
-        # All outputs are batches tensors.
-        # Convert to numpy arrays, and take index [0] to remove the batch dimension.
-        # We're only interested in the first num_detections.
-        num_detections = int(detections.pop('num_detections'))
-        detections = {key: threshue[0, :num_detections].numpy()
-                      for key, threshue in detections.items()}
-        detections['num_detections'] = num_detections
+        detections = self.detect_fn(image_np)
 
         # detection_classes should be ints.
         detections['detection_classes'] = detections['detection_classes'].astype(
@@ -119,7 +154,7 @@ class Model:
         detections['detection_boxes'][:, 1] *= image_np.shape[1]
         detections['detection_boxes'][:, 3] *= image_np.shape[1]
         
-        return image, detections
+        return image_np, detections
     
     def get_class_detections(self, detections, class_name,
                              format=('x1', 'y1', 'w', 'h'),
@@ -178,8 +213,8 @@ class Model:
         # Get Cutting Path.
         cut_path = plan_cover_cutting_path(laptop_coords=best_cover_box,
                                            holes_coords=screw_boxes,
-                                           method=1,
-                                           interpolate=True, interp_step=2,
+                                           method=0,
+                                           interpolate=True, interp_step=4,
                                            tol=tol, min_hole_dist=min_hole_dist)
         
         image_np = np.copy(image)
@@ -193,7 +228,9 @@ class Model:
         for screw_box in screw_boxes:
             for i in range(len(screw_box) - 1):
                 cv2.rectangle(image_np, tuple(screw_box[0:2]),
-                        (screw_box[0] + screw_box[2], screw_box[1] + screw_box[3]), (0, 0, 255), 2)   
+                        (screw_box[0] + screw_box[2], screw_box[1] + screw_box[3]), (0, 0, 255), 2)
+                cv2.circle(
+                    image_np, (screw_box[0] + screw_box[2] // 2, screw_box[1] + screw_box[3] // 2), 1, (0, 0, 255), 2)
         
         # Visualise the cutting path.
         for i in range(len(cut_path) - 1):
@@ -203,10 +240,12 @@ class Model:
         cv2.imshow("image_window", image_np)
         key = cv2.waitKey(0) & 0xFF
         
+        cv2.destroyAllWindows()
+
         if key == ord('e'):
-            return
+            return None, None
         
-        return cut_path
+        return cut_path, screw_boxes
 
     def publish_cut_path(self, cut_path):
         # Publish Cutting Path.
@@ -221,18 +260,35 @@ if __name__ == "__main__":
     
     rospy.init_node("components_detection")
 
+    sys.path.insert(
+        0, '/home/zaferpc/TensorFlow/workspace/yolov5')
+
+    publish_cut_path = False
+    publish_screw_centers = True
+
     model = Model(model_path='/home/zaferpc/abb_ws/src/perception/models/',
                   image_topic='/camera/color/image_raw',
-                  cutting_plan_topic="/cutting_path")
+                  cutting_plan_topic="/cutting_path", model_type='yolo', imgsz=832)
 
-    # Recieve an image msg from camera topic, then, return image and detections.
-    image, detections = model.recieve_and_detect()
+    while not rospy.is_shutdown():
+        # Recieve an image msg from camera topic, then, return image and detections.
+        image, detections = model.recieve_and_detect()
 
-    # Generate the cover cutting path from given detections and image to visulaise on.
-    cut_path = model.generate_cover_cutting_path(image, detections,
-                                                 min_screw_score=0,
-                                                 tol=100, min_hole_dist=3) # generated path params
+        # Generate the cover cutting path from given detections and image to visulaise on.
+        cut_path, screw_holes = model.generate_cover_cutting_path(image, detections,
+                                                                  min_screw_score=0,
+                                                                  tol=50, min_hole_dist=5) # generated path params
 
-    # Publish the generated cutting path if not empty.
-    if cut_path is not None:
-        model.publish_cut_path(cut_path)
+        # screw_centers = adjust_hole_center(image, screw_holes)
+        
+        # Publish the generated cutting path if not empty.
+        if screw_holes is not None and publish_screw_centers:
+            screw_centers = [(sh[0] + (sh[2] // 2), sh[1] + (sh[3] // 2)) for sh in screw_holes]
+            model.publish_cut_path(screw_centers)
+
+        # Publish the generated cutting path if not empty.
+        if cut_path is not None and publish_cut_path:
+            model.publish_cut_path(cut_path)
+        
+        print("Input Any Key to Continue")
+        input()

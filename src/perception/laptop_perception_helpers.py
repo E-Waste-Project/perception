@@ -30,11 +30,19 @@ class Rect:
         self.y += y
         self.y2 += y
     
+    def enlarge_by(self, val):
+        self.x -= val
+        self.y -= val
+        self.w += 2*val
+        self.h += 2*val
+        self.x2 += val
+        self.y2 += val
+    
     def add(self, rect):
         self.shift_by(rect.x, rect.y)
 
     def rect_to_path(self):
-        return [(self.x, self.y), (self.x, self.y2), (self.x2, self.y), (self.x2, self.y2), (self.x, self.y)]
+        return [(self.x, self.y), (self.x, self.y2), (self.x2, self.y2), (self.x2, self.y), (self.x, self.y)]
 
 
 def nothing(x):
@@ -66,8 +74,9 @@ def aspect_ratio(cnt):
 
 def read_and_resize(directory, img_id, size=(720, 480), compression='.jpg'):
     read_img = cv2.imread(directory + str(img_id) + compression)
-    resized_img = cv2.resize(read_img, size)
-    return resized_img
+    if size is not None:
+        read_img = cv2.resize(read_img, size)
+    return read_img
 
 
 def preprocess(input_img, gauss_kernel=21, clahe_kernel=2,
@@ -160,87 +169,76 @@ def detect_holes(input_img, draw_on=None):
 
 
 def rectangular_path_method(holes_coords, left, right, upper, lower, min_hole_dist):
-
-    # Sort the holes according to the coordinates of their right edge.
-    x_sorted_holes_coords = sorted(holes_coords, key=lambda coord: coord.x2)
-
+    
     # Remove holes that are outside the cutting path rectangular area.
-    x_sorted_holes_coords = list(filter(lambda coord: upper <= coord.y <= lower,
-                                        x_sorted_holes_coords))
+    holes_coords = list(filter(lambda coord: (left <= coord.x <= right)
+                                                   or (left <= coord.x2 <= right)
+                                                   or (upper <= coord.y <= lower) 
+                                                   or (upper <= coord.y2 <= lower),
+                                        holes_coords))
 
-    # Get right edge coordinates of holes.
-    sorted_x_values = list(map(lambda coord: coord.x2, x_sorted_holes_coords))
+    holes_intersecting_left_edge = list(filter(lambda coord: (coord.x <= left <= coord.x2),
+                                        holes_coords))
+    # Sort the holes according to the coordinates of their right edge.
+    x_sorted_holes_coords = sorted(holes_intersecting_left_edge, key=lambda coord: coord.x2)
 
     # Adjust the cutting rectangle left edge position,
     # to be at least far from nearest hole right edge by min_hole_dist.
-    while len(sorted_x_values) > 0:
-        left_nearest_hole_idx = min(bisect_left(
-            sorted_x_values, left), len(sorted_x_values)-1)
-        hole = x_sorted_holes_coords[left_nearest_hole_idx]
-        x = hole.x
-        y = hole.y
-        x2 = hole.x2
-        y2 = hole.y2
-        if abs(x - left) < min_hole_dist and upper <= y <= lower:
-            left = x2 + min_hole_dist
-        else:
-            break
+    while len(holes_intersecting_left_edge) > 0:
+        x2 = x_sorted_holes_coords[-1].x2
+        left = x2 + min_hole_dist
+        holes_intersecting_left_edge = list(filter(lambda coord: (coord.x <= left <= coord.x2),
+                                    holes_coords))
+        # Sort the holes according to the coordinates of their right edge.
+        x_sorted_holes_coords = sorted(holes_intersecting_left_edge, key=lambda coord: coord.x2)
 
-    # Get left edge coordinates of holes.
-    sorted_x_values = list(
-        map(lambda coord: coord.x, x_sorted_holes_coords))
+    holes_intersecting_right_edge = list(filter(lambda coord: (coord.x <= right <= coord.x2),
+                                        holes_coords))
+    # Sort the holes according to the coordinates of their left edge.
+    x_sorted_holes_coords = sorted(holes_intersecting_right_edge, key=lambda coord: coord.x)
 
     # Adjust the cutting rectangle right edge position,
     # to be at least far from nearest hole left edge by min_hole_dist.
-    while len(sorted_x_values) > 0:
-        right_nearest_hole_idx = max(
-            0, bisect_right(sorted_x_values, right) - 1)
-        x = x_sorted_holes_coords[right_nearest_hole_idx].x
-        y = x_sorted_holes_coords[right_nearest_hole_idx].y
-        if abs(x - right) < min_hole_dist and upper <= y <= lower:
-            right = x - min_hole_dist
-        else:
-            break
+    while len(holes_intersecting_right_edge) > 0:
+        x = x_sorted_holes_coords[0].x
+        right = x - min_hole_dist
+        holes_intersecting_right_edge = list(filter(lambda coord: (coord.x <= right <= coord.x2),
+                                        holes_coords))
+        # Sort the holes according to the coordinates of their left edge.
+        x_sorted_holes_coords = sorted(holes_intersecting_right_edge, key=lambda coord: coord.x)
 
+    holes_intersecting_upper_edge = list(filter(lambda coord: (coord.y <= upper <= coord.y2),
+                                        holes_coords))
     # Sort the holes according to the coordinates of their lower edge.
     y_sorted_holes_coords = sorted(
-        holes_coords, key=lambda coord: coord.y2)
-
-    # Remove holes that are outside the cutting path rectangular area.
-    y_sorted_holes_coords = list(filter(lambda coord: left <= coord.x <= right,
-                                        y_sorted_holes_coords))
-    # Get lower edge coordinates of holes.
-    sorted_y_values = list(
-        map(lambda coord: coord.y2, y_sorted_holes_coords))
+        holes_intersecting_upper_edge, key=lambda coord: coord.y2)
 
     # Adjust the cutting rectangle upper edge position,
     # to be at least far from nearest hole lower edge by min_hole_dist.
-    while len(sorted_y_values) > 0:
-        upper_nearest_hole_idx = min(bisect_left(
-            sorted_y_values, upper), len(sorted_y_values)-1)
-        x = y_sorted_holes_coords[upper_nearest_hole_idx].x
-        y = y_sorted_holes_coords[upper_nearest_hole_idx].y
-        y2 = y_sorted_holes_coords[upper_nearest_hole_idx].y2
-        if abs(y - upper) < min_hole_dist and left <= x <= right:
-            upper = y2 + min_hole_dist
-        else:
-            break
+    while len(holes_intersecting_upper_edge) > 0:
+        y2 = y_sorted_holes_coords[-1].y2
+        upper = y2 + min_hole_dist
+        holes_intersecting_upper_edge = list(filter(lambda coord: (coord.y <= upper <= coord.y2),
+                                    holes_coords))
+        # Sort the holes according to the coordinates of their lower edge.
+        y_sorted_holes_coords = sorted(
+            holes_intersecting_upper_edge, key=lambda coord: coord.y2)
 
-    # Get upper edge coordinates of holes.
-    sorted_y_values = list(
-        map(lambda coord: coord.y, y_sorted_holes_coords))
+    holes_intersecting_lower_edge = list(filter(lambda coord: (coord.y <= lower <= coord.y2),
+                                        holes_coords))
+    # Sort the holes according to the coordinates of their upper edge.
+    y_sorted_holes_coords = sorted(
+        holes_intersecting_lower_edge, key=lambda coord: coord.y)
 
     # Adjust the cutting rectangle lower edge position,
     # to be at least far from nearest hole upper edge by min_hole_dist.
-    while len(sorted_y_values) > 0:
-        lower_nearest_hole_idx = bisect_right(
-            sorted_y_values, lower) - 1
-        x = y_sorted_holes_coords[lower_nearest_hole_idx].x
-        y = y_sorted_holes_coords[lower_nearest_hole_idx].y
-        if abs(y - lower) < min_hole_dist and left <= x <= right:
-            lower = y - min_hole_dist
-        else:
-            break
+    while len(holes_intersecting_lower_edge) > 0:
+        y = y_sorted_holes_coords[0].y
+        lower = y - min_hole_dist
+        holes_intersecting_lower_edge = list(filter(lambda coord: (coord.y <= lower <= coord.y2),
+                                        holes_coords))
+        # Sort the holes according to the coordinates of their upper edge.
+        y_sorted_holes_coords = sorted(holes_intersecting_lower_edge, key=lambda coord: coord.y)
 
     cut_rect = Rect(left, upper, right - \
                     left, lower - upper)
@@ -419,6 +417,8 @@ def custom_path_method(holes_coords, left, right, upper, lower, min_hole_dist):
     return cut_path
 
 def interpolate(p1, p2, step):
+    if p2 == p1:
+        return [p1]
     sign = int(abs(p2-p1) / (p2-p1))
     return list(range(p1, p2, step * sign))
 
@@ -437,10 +437,6 @@ def interpolate_path(path, step=2):
         new_path.append((x2, y2))
     return new_path
         
-        
-        
-
-
 def plan_cover_cutting_path(input_img=None, tol=30, min_hole_dist=5, draw_on=None,
  laptop_coords=None, holes_coords=None, method=0, interpolate=True, interp_step=2):
     """Takes gray_scale img containing a laptop Or takes laptop & holes coordinates,
@@ -500,7 +496,8 @@ def plan_cover_cutting_path(input_img=None, tol=30, min_hole_dist=5, draw_on=Non
 
         # Draw the hole(s) bounding boxes, and make their coordinates absolute
         for hole in holes_coords:
-            hole.add(laptop_coords)
+            if input_img is not None:
+                hole.add(laptop_coords)
             if draw_on is not None:
                 hole.draw_on(draw_on)
 
@@ -509,6 +506,8 @@ def plan_cover_cutting_path(input_img=None, tol=30, min_hole_dist=5, draw_on=Non
             cut_path = cut_rect.rect_to_path()
         elif method == 1:
             cut_path = custom_path_method(holes_coords, left, right, upper, lower, min_hole_dist)
+        elif method is None:
+            cut_path = cut_rect.rect_to_path()
         else:
             raise ValueError("Wrong method number")
 
@@ -525,6 +524,44 @@ def plan_cover_cutting_path(input_img=None, tol=30, min_hole_dist=5, draw_on=Non
         # detect_holes(cropped_gray, draw_on=cropped_img)
         
     return cut_path
+
+def adjust_hole_center(image, hole_boxes):
+    output = image.copy()
+    # gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    # k = 2 * 16 - 1
+    # c = 2
+    # gray = preprocess(gray, gauss_kernel=k, clahe_kernel=c)
+    new_hole_centers = []
+    for i, hole in enumerate(hole_boxes):
+        rect_hole = Rect(*hole)
+        # rect_hole.enlarge_by(5)
+        # gray_crop = rect_hole.crop_img(gray)
+        # # show the output image
+        # cv2.imshow("gray_crop", gray_crop)
+        # cv2.waitKey(0)
+        gray_crop = output
+        # detect circles in the image
+        circles = cv2.HoughCircles(gray_crop, cv2.HOUGH_GRADIENT, 1.01, 1, 200, 100)
+        # ensure at least some circles were found
+        if circles is not None:
+            # convert the (x, y) coordinates and radius of the circles to integers
+            circles = np.round(circles[0, :]).astype("int")
+            # loop over the (x, y) coordinates and radius of the circles
+            for (x, y, r) in circles:
+                # draw the circle in the output image, then draw a rectangle
+                # corresponding to the center of the circle
+                x += rect_hole.x
+                y += rect_hole.y
+                prev_x = rect_hole.x + (rect_hole.w // 2)
+                prev_y = rect_hole.y + (rect_hole.h // 2)
+                cv2.circle(output, (prev_x, prev_y), 1, (0, 0, 255), 1)
+                cv2.circle(output, (x, y), 1, (0, 255, 0), 1)
+                # cv2.rectangle(output, (x - 1, y - 1), (x + 1, y + 1), (0, 128, 255), -1)
+                new_hole_centers.append([x,y])
+            # show the output image
+            cv2.imshow("output", output)
+            cv2.waitKey(0)
+    return new_hole_centers
 
 
 if __name__ == "__main__":

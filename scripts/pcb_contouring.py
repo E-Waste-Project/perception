@@ -13,6 +13,18 @@ import ros_numpy
 from scipy.signal import savgol_filter
 from std_msgs.msg import Float32MultiArray
 
+
+from tensorflow.python.keras import backend as K
+from tensorflow.keras.utils import CustomObjectScope
+def relu6(x):
+  return K.relu(x, max_value=6)
+# with CustomObjectScope({'relu6': relu6}):
+#     keras_mobilenet= tf.keras.applications.mobilenet.MobileNet(weights=None)
+#     keras_mobilenet.compile(optimizer=tf.keras.optimizers.SGD(lr=0.0001, momentum=0.9),
+#                           loss='categorical_crossentropy',
+#                           metrics=['accuracy'])
+#     mobilenet_estimator = tf.keras.estimator.model_to_estimator(keras_model=keras_mobilenet)
+
 def scale_contour(cnt, scale):
     M = cv2.moments(cnt)
     cx = int(M['m10']/M['m00'])
@@ -45,8 +57,9 @@ def load_images(path):
 rospy.init_node("test_node")
 message_pub = rospy.Publisher("/cutting_path",Float32MultiArray)
 
-model = load_model(
-    '/home/zaferpc/abb_ws/src/perception/models/segmentation_model.h5')
+with CustomObjectScope({'relu6': relu6}):
+    model = load_model(
+    '/home/zaferpc/abb_ws/src/perception/models/segmentation_model_deepLab.h5')
 model.summary()
 #imgs = load_images("/home/zaferpc/data/laptop_components/exp_auto_direct_light/imgs")
 image_raw = rospy.wait_for_message('/camera/color/image_raw',Image)

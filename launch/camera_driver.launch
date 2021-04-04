@@ -2,4 +2,5 @@
 <launch>
     <include file="$(find realsense2_camera)/launch/rs_camera.launch"/>
     <rosparam file="$(find perception)/config/camera_params.yaml" />
+    <!-- <include file="$(find perception)/launch/rs_rgbd.launch"/> -->
 </launch>

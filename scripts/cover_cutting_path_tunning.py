@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 from perception.laptop_perception_helpers import plan_cover_cutting_path, read_and_resize
 
-data_dir = "/home/ubuntu/data/laptop_base/"
+data_dir = "/home/abdelrhman/data/laptop_base/"
 dset_sz = 29
 image_id = 1
 original_img = read_and_resize(data_dir, image_id)
@@ -48,9 +48,10 @@ while True:
     # Plan Cover Cutting Path given a gray image, tolerance, and minimum hole distance.#
     ####################################################################################
 
-    cut_path = plan_cover_cutting_path(gray, tol, min_hole_dist, draw_on=img, method=1)
+    cut_path = plan_cover_cutting_path(gray, tol, min_hole_dist, draw_on=img, method=1, interp_step=4)
     for i in range(len(cut_path) - 1):
-        cv2.line(img, tuple(cut_path[i]), tuple(cut_path[i+1]), (0, 0, 255), 2)    
+        # cv2.line(img, tuple(cut_path[i]), tuple(cut_path[i+1]), (0, 0, 255), 2)
+        cv2.circle(img, tuple(cut_path[i]), 0, (0, 0, 255), 2)
 
     # ======================================================================== #
 
