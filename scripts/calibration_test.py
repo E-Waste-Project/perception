@@ -57,7 +57,7 @@ class Calibrate:
         for x, y in points:
             path_msg.data.append(y)
             path_msg.data.append(x)
-        self.path_publisher.publish(path_msg)
+        self.publisher.publish(path_msg)
 
 
 if __name__ == '__main__':
