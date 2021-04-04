@@ -41,14 +41,15 @@ class Calibrate:
         if ret == True:
             corners2 = cv.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
             # Draw and display the corners
-            # cv.drawChessboardCorners(img, size, corners2, ret)
+            cv.drawChessboardCorners(img, size, corners2, ret)
             corner_points = []
             for i in range(corners2.shape[0]):
-            #     cv.circle(img, tuple(corners2[i][0]), 5, (0, 255, 0), 3)
-            #     cv.imshow('img', img)
-            #     cv.waitKey(0)
+                # cv.circle(img, tuple(corners2[i][0]), 5, (0, 255, 0), 3)
                 corner_points.append(tuple(corners2[i][0]))
             self.publish_points(corner_points)
+            cv.imshow('img', img)
+            cv.waitKey(0)
+            cv.destroyAllWindows()
 
     def publish_points(self, points):
         # Publish Cutting Path.
@@ -66,6 +67,5 @@ if __name__ == '__main__':
     while not rospy.is_shutdown():
         calib.recieve_img()
         calib.detect_corners(size=(6, 9))
-        print("Input Any Key to Continue")
+        print("Input Any Key to Redetect")
         input()
-    cv.destroyAllWindows()
