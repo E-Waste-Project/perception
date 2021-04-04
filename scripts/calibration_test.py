@@ -63,7 +63,7 @@ class Calibrate:
 if __name__ == '__main__':
     rospy.init_node("calibration_test")
     sleep(1)
-    calib = Calibrate(read_img=True)
+    calib = Calibrate(read_img=False)
     while not rospy.is_shutdown():
         calib.recieve_img()
         calib.detect_corners(size=(6, 9))
