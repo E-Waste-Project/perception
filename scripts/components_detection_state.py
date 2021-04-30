@@ -1,19 +1,22 @@
 #!/usr/bin/env python
-import cv2
-from perception.yolo_detector import Yolo
-from perception.coco_datasets import convert_format
-from perception.laptop_perception_helpers import plan_cover_cutting_path, adjust_hole_center
-import sys
 import rospy
 from sensor_msgs.msg import Image
 from std_msgs.msg import Float32MultiArray
+from std_msgs.msg import String
 from ros_numpy import numpify
 
 import numpy as np
 import tensorflow as tf
+
 import time
 import warnings
 warnings.filterwarnings('ignore')   # Suppress Matplotlib warnings
+import sys
+
+from perception.laptop_perception_helpers import plan_cover_cutting_path, adjust_hole_center
+from perception.coco_datasets import convert_format
+from perception.yolo_detector import Yolo
+import cv2
 
 
 class Model:
@@ -22,19 +25,24 @@ class Model:
                  model_path='/home/zaferpc/abb_ws/src/perception/models/',
                  image_topic='/camera/color/image_raw',
                  cutting_plan_topic='/cutting_path',
-                 imgsz=1280):
-
+                 imgsz=1280,
+                 publish_cut_path = False,
+                 publish_screw_centers = False):
+        
+        self.publish_cut_path = publish_cut_path
+        self.publish_screw_centers = publish_screw_centers
+        
         self.model_type = model_type
         if model_type == 'ssd':
 
             PATH_TO_MODEL_DIR = model_path + 'saved_model'
             PATH_TO_LABELS = model_path + 'label_map.pbtxt'
 
-            print('Loading model... ')
+            print('Loading model... ', end='')
             start_time = time.time()
 
             # Load the save tensorflow model.
-            model = tf.saved_model.load(PATH_TO_MODEL_DIR)
+            model = tf.saved_model.load(PATH_TO_MODEL_DIR) 
 
             def detect_fn(image_np):
                 # The input needs to be a tensor, convert it using `tf.convert_to_tensor`.
@@ -48,12 +56,12 @@ class Model:
                 # We're only interested in the first num_detections.
                 num_detections = int(detections.pop('num_detections'))
                 detections = {key: threshue[0, :num_detections].numpy()
-                              for key, threshue in detections.items()}
+                            for key, threshue in detections.items()}
                 detections['num_detections'] = num_detections
                 return detections
 
             self.detect_fn = detect_fn
-
+            
             end_time = time.time()
             elapsed_time = end_time - start_time
             print('Done! Took {} seconds'.format(elapsed_time))
@@ -95,25 +103,50 @@ class Model:
 
         self.image_topic = image_topic
         self.image = None
-        self.refPt = []
-        cv2.namedWindow("image")
-        cv2.setMouseCallback("image", self.choose_screw)
+
 
         # dictionary to convert class id to class name
-        self.cid_to_cname = {
-            vals['id']: cname for cname, vals in self.class_thresh.items()}
+        self.cid_to_cname = {vals['id']: cname for cname, vals in self.class_thresh.items()}
 
         # dictionary to convert class name to class id
-        self.cname_to_cid = {cname: vals['id']
-                             for cname, vals in self.class_thresh.items()}
+        self.cname_to_cid = {cname: vals['id'] for cname, vals in self.class_thresh.items()}
 
         # dictionary to convert class id to class threshold
         self.cid_to_cthresh = {vals['id']: vals['thresh'] for cname,
-                               vals in self.class_thresh.items()}
-
+                        vals in self.class_thresh.items()}
+        
         self.path_publisher = rospy.Publisher(cutting_plan_topic,
                                               Float32MultiArray,
                                               queue_size=1)
+        
+        self.state_publisher = rospy.Publisher("/found_components",String,queue_size = 1)
+        rospy.Subscriber("/capture_state", String, self.capture_callback)
+        
+    def capture_callback(self,msg):
+        # Recieve an image msg from camera topic, then, return image and detections.
+        image, detections = self.recieve_and_detect()
+
+        # Generate the cover cutting path from given detections and image to visulaise on.
+        cut_path, screw_holes = self.generate_cover_cutting_path(image, detections,
+                                                                  min_screw_score=0,
+                                                                  tol=50, min_hole_dist=5) # generated path params
+        
+        
+        # screw_centers = adjust_hole_center(image, screw_holes)
+        components_msg = String()
+        # Publish the generated cutting path if not empty.
+        if screw_holes is not None and self.publish_screw_centers:
+            screw_centers = [(sh[0] + (sh[2] // 2), sh[1] + (sh[3] // 2)) for sh in screw_holes]
+            self.publish_cut_path_func(screw_centers)
+            components_msg.data = "screws"
+            
+
+        # Publish the generated cutting path if not empty.
+        if cut_path is not None and self.publish_cut_path:
+            self.publish_cut_path_func(cut_path)
+            components_msg.data = "cover"
+        
+        self.state_publisher.publish(components_msg)
 
     def remove_detections(self, detections, indicies_to_remove):
         detections['detection_boxes'] = np.delete(
@@ -122,19 +155,16 @@ class Model:
             detections['detection_classes'], indicies_to_remove)
         detections['detection_scores'] = np.delete(
             detections['detection_scores'], indicies_to_remove)
-
+    
     def recieve_and_detect(self):
         # # Wait for rgb camera stream to publish a frame.
         image_msg = rospy.wait_for_message(self.image_topic, Image)
-
+        
         # Convert msg to numpy image.
         image_np = numpify(image_msg)
 
         # image_np = img = cv2.imread(
         #     '/home/zaferpc/TensorFlow/workspace/training_demo/images/test/1.jpg')
-        image_np = cv2.cvtColor(image_np, cv2.COLOR_BGR2RGB)
-        # cv2.imshow("image", image_np)
-        # cv2.waitKey(0)
 
         # Run forward prop of model to get the detections.
         detections = self.detect_fn(image_np)
@@ -149,7 +179,7 @@ class Model:
             min_score = self.cid_to_cthresh[detections['detection_classes'][j]]
             if score < min_score:
                 indicies_to_remove.append(j)
-
+        
         self.remove_detections(detections, indicies_to_remove)
 
         print(image_np.shape)
@@ -158,9 +188,9 @@ class Model:
         detections['detection_boxes'][:, 2] *= image_np.shape[0]
         detections['detection_boxes'][:, 1] *= image_np.shape[1]
         detections['detection_boxes'][:, 3] *= image_np.shape[1]
-
+        
         return image_np, detections
-
+    
     def get_class_detections(self, detections, class_name,
                              format=('x1', 'y1', 'w', 'h'),
                              get_scores=False,
@@ -172,124 +202,87 @@ class Model:
         scores = []
         for i, cid in enumerate(detections['detection_classes']):
             if cid == self.cname_to_cid[class_name]:
-                box = convert_format(detections['detection_boxes'][i], in_format=(
-                    'y1', 'x1', 'y2', 'x2'), out_format=format)
+                box = convert_format(detections['detection_boxes'][i], in_format=('y1', 'x1', 'y2', 'x2'), out_format=format)
                 box = [int(x) for x in box]
                 score = detections['detection_scores'][i]
                 if score >= min_score:
                     boxes.append(box)
                     if get_scores:
                         scores.append(score)
-
+        
         if get_scores:
             return boxes, scores
         else:
             return boxes
-
+    
     def generate_cover_cutting_path(self,
                                     image,
                                     detections,
                                     min_screw_score=0,
                                     tol=100,
-                                    min_hole_dist=3,
-                                    hole_tol=0,
-                                    return_holes_inside_cut_path=False,
-                                    filter_screws=False):
+                                    min_hole_dist=3):
         """Waits for an image msg from camera topic, then applies detection model
         to get the detected classes, finally generate a cutting path and publish it.
 
         param min_screw_score: a score threshold for detected screws confidence.
         """
-
+        
         # Get detected laptop_covers.
         cover_boxes, cover_scores = self.get_class_detections(detections=detections,
-                                                              class_name='Laptop_Back_Cover',
-                                                              get_scores=True)
-
+                                                            class_name='Laptop_Back_Cover',
+                                                            get_scores=True)
+        
         # Get laptop_cover with highest confidence.
         best_cover_score = 0
-        best_cover_box = []
+        best_cover_box = None
         for box, score in zip(cover_boxes, cover_scores):
             if score > best_cover_score:
                 best_cover_score = score
                 best_cover_box = box
-
+        
         # Get screw holes.
         screw_boxes = self.get_class_detections(detections=detections,
                                                 class_name='Screw',
                                                 min_score=min_screw_score)
-
-        if len(best_cover_box) > 0:
-            # Get Cutting Path.
-            cut_path, holes_inside_cut_path = plan_cover_cutting_path(laptop_coords=best_cover_box,
-                                                                      holes_coords=screw_boxes,
-                                                                      method=0,
-                                                                      interpolate=False, interp_step=4,
-                                                                      tol=tol, min_hole_dist=min_hole_dist)
-        else:
-            cut_path = []
-
+        
+        # Get Cutting Path.
+        cut_path = plan_cover_cutting_path(laptop_coords=best_cover_box,
+                                           holes_coords=screw_boxes,
+                                           method=0,
+                                           interpolate=True, interp_step=4,
+                                           tol=tol, min_hole_dist=min_hole_dist)
+        
         image_np = np.copy(image)
-
-        if return_holes_inside_cut_path and len(best_cover_box) > 0:
-            screw_boxes = holes_inside_cut_path
 
         # Visualise detected laptop_cover
         for i in range(len(best_cover_box) - 1):
             cv2.rectangle(image_np, tuple(best_cover_box[0:2]),
-                          (best_cover_box[0] + best_cover_box[2], best_cover_box[1] + best_cover_box[3]), (0, 0, 255), 2)
-
-        screw_boxes = [[sb[0] - hole_tol, sb[1] - hole_tol, sb[2] +
-                        2*hole_tol, sb[3] + 2*hole_tol] for sb in screw_boxes]
+                        (best_cover_box[0] + best_cover_box[2], best_cover_box[1] + best_cover_box[3]), (0, 0, 255), 2)
+        
         # Visualise detected screws.
         for screw_box in screw_boxes:
-            cv2.rectangle(image_np, tuple(screw_box[0:2]),
-                            (screw_box[0] + screw_box[2], screw_box[1] + screw_box[3]), (0, 0, 255), 2)
-            # cv2.circle(
-            #     image_np, (screw_box[0] + screw_box[2] // 2, screw_box[1] + screw_box[3] // 2), 1, (0, 0, 255), 2)
-
+            for i in range(len(screw_box) - 1):
+                cv2.rectangle(image_np, tuple(screw_box[0:2]),
+                        (screw_box[0] + screw_box[2], screw_box[1] + screw_box[3]), (0, 0, 255), 2)
+                cv2.circle(
+                    image_np, (screw_box[0] + screw_box[2] // 2, screw_box[1] + screw_box[3] // 2), 1, (0, 0, 255), 2)
+        
         # Visualise the cutting path.
         for i in range(len(cut_path) - 1):
-            cv2.line(image_np, tuple(cut_path[i]), tuple(
-                cut_path[i+1]), (0, 0, 255), 2)
+            cv2.line(image_np, tuple(cut_path[i]), tuple(cut_path[i+1]), (0, 0, 255), 2)    
 
-        self.image = image_np
-
-        if filter_screws:
-            print("======================================================================")
-            print("Choose screws by clicking on them on the image, Press 'c' when finished")
-            print("======================================================================")
-            key = 0
-            # Show image and wait for pressed key to continue or exit(if key=='e').
-            while key != ord('c'):
-                cv2.imshow("image", self.image)
-                key = cv2.waitKey(20) & 0xFF
-            filtered_screw_boxes = []
-            for point in self.refPt:
-                px, py = point
-                for screw_box in screw_boxes:
-                    x, y, w, h = screw_box
-                    x1, y1 = x+w, y+h
-                    if x <= px <= x1 and y <= py <= y1:
-                        filtered_screw_boxes.append(screw_box)
-
-            screw_boxes = filtered_screw_boxes
-            # Visualise detected screws.
-            for screw_box in screw_boxes:
-                cv2.rectangle(image_np, tuple(screw_box[0:2]),
-                                (screw_box[0] + screw_box[2], screw_box[1] + screw_box[3]), (0, 255, 0), 2)
-
+        # Show image and wait for pressed key to continue or exit(if key=='e').
         cv2.imshow("image_window", image_np)
         key = cv2.waitKey(0) & 0xFF
-
+        
         cv2.destroyAllWindows()
 
         if key == ord('e'):
-            return [], []
-
+            return None, None
+        
         return cut_path, screw_boxes
 
-    def publish_cut_path(self, cut_path):
+    def publish_cut_path_func(self, cut_path):
         # Publish Cutting Path.
         path_msg = Float32MultiArray()
         for x, y in cut_path:
@@ -297,51 +290,42 @@ class Model:
             path_msg.data.append(x)
         self.path_publisher.publish(path_msg)
 
-    def choose_screw(self, event, x, y, flags, param):
-        # if the left mouse button was clicked, record the point
-        if event == cv2.EVENT_LBUTTONUP:
-            self.refPt.append((x, y))
-            # draw a rectangle around the region of interest
-            cv2.circle(self.image, self.refPt[-1], 5, (0, 255, 0), 5)
-
 
 if __name__ == "__main__":
-
+    
     rospy.init_node("components_detection")
 
     sys.path.insert(
         0, '/home/zaferpc/TensorFlow/workspace/yolov5')
 
-    publish_cut_path = False
-    publish_screw_centers = True
+    
+    
 
     model = Model(model_path='/home/zaferpc/abb_ws/src/perception/models/',
                   image_topic='/camera/color/image_raw',
-                  cutting_plan_topic="/cutting_path", model_type='yolo', imgsz=860)
+                  cutting_plan_topic="/cutting_path", model_type='yolo', imgsz=840,
+                  publish_cut_path = False, publish_screw_centers = True)
 
-    while not rospy.is_shutdown():
-        # Recieve an image msg from camera topic, then, return image and detections.
-        image, detections = model.recieve_and_detect()
+    rospy.spin()
+    # while not rospy.is_shutdown():
+    #     # Recieve an image msg from camera topic, then, return image and detections.
+    #     image, detections = model.recieve_and_detect()
 
-        # Generate the cover cutting path, and screw holes from given detections and image to visulaise on.
-        cut_path, screw_holes = model.generate_cover_cutting_path(image, detections,
-                                                                  min_screw_score=0,
-                                                                  tol=50, min_hole_dist=5, hole_tol=5,  # generated path params
-                                                                  return_holes_inside_cut_path=False,
-                                                                  filter_screws=True)
+    #     # Generate the cover cutting path from given detections and image to visulaise on.
+    #     cut_path, screw_holes = model.generate_cover_cutting_path(image, detections,
+    #                                                               min_screw_score=0,
+    #                                                               tol=50, min_hole_dist=5) # generated path params
 
-        # Publish the generated cutting path if not empty.
-        if len(screw_holes) > 0 and publish_screw_centers:
-            # screw_centers = [(sh[0] + (sh[2] // 2), sh[1] + (sh[3] // 2)) for sh in screw_holes]
-            cut_boxes = []
-            for sh in screw_holes:
-                x, y, x2, y2 = sh[0], sh[1], sh[0] + sh[2], sh[1] + sh[3]
-                cut_boxes.extend([(x, y), (x, y2), (x2, y2), (x2, y), (x, y)])
-            cut_boxes.extend(cut_path)
-            model.publish_cut_path(cut_boxes)
-        # Publish the generated cutting path if not empty.
-        if len(cut_path) > 0 and publish_cut_path:
-            model.publish_cut_path(cut_path)
+    #     # screw_centers = adjust_hole_center(image, screw_holes)
+        
+    #     # Publish the generated cutting path if not empty.
+    #     if screw_holes is not None and publish_screw_centers:
+    #         screw_centers = [(sh[0] + (sh[2] // 2), sh[1] + (sh[3] // 2)) for sh in screw_holes]
+    #         model.publish_cut_path(screw_centers)
 
-        print("Input Any Key to Continue")
-        input()
+    #     # Publish the generated cutting path if not empty.
+    #     if cut_path is not None and publish_cut_path:
+    #         model.publish_cut_path(cut_path)
+        
+    #     print("Input Any Key to Continue")
+    #     input()

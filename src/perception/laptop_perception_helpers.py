@@ -171,10 +171,8 @@ def detect_holes(input_img, draw_on=None):
 def rectangular_path_method(holes_coords, left, right, upper, lower, min_hole_dist):
     
     # Remove holes that are outside the cutting path rectangular area.
-    holes_coords = list(filter(lambda coord: (left <= coord.x <= right)
-                                                   or (left <= coord.x2 <= right)
-                                                   or (upper <= coord.y <= lower) 
-                                                   or (upper <= coord.y2 <= lower),
+    holes_coords = list(filter(lambda coord: (((left <= coord.x <= right) or (left <= coord.x2 <= right))
+                                          and ((upper <= coord.y <= lower) or (upper <= coord.y2 <= lower))),
                                         holes_coords))
 
     holes_intersecting_left_edge = list(filter(lambda coord: (coord.x <= left <= coord.x2),
@@ -243,7 +241,11 @@ def rectangular_path_method(holes_coords, left, right, upper, lower, min_hole_di
     cut_rect = Rect(left, upper, right - \
                     left, lower - upper)
     
-    return cut_rect
+    holes_inside_cut_path = list(filter(lambda coord: (((left <= coord.x <= right) or (left <= coord.x2 <= right))
+                                          and ((upper <= coord.y <= lower) or (upper <= coord.y2 <= lower))),
+                                        holes_coords))
+    
+    return cut_rect, holes_inside_cut_path
 
 def custom_path_method(holes_coords, left, right, upper, lower, min_hole_dist):
     """Produce a cutting path that preserves overall edge location but when a hole is near an edge,
@@ -501,8 +503,11 @@ def plan_cover_cutting_path(input_img=None, tol=30, min_hole_dist=5, draw_on=Non
             if draw_on is not None:
                 hole.draw_on(draw_on)
 
+        holes_inside_cut_path = []
         if method == 0:
-            cut_rect = rectangular_path_method(holes_coords, left, right, upper, lower, min_hole_dist)
+            cut_rect, holes_inside_cut_path_as_rects = rectangular_path_method(holes_coords, left, right, upper, lower, min_hole_dist)
+            for hole_rect in holes_inside_cut_path_as_rects:
+                holes_inside_cut_path.append([hole_rect.x, hole_rect.y, hole_rect.w, hole_rect.h])
             cut_path = cut_rect.rect_to_path()
         elif method == 1:
             cut_path = custom_path_method(holes_coords, left, right, upper, lower, min_hole_dist)
@@ -523,7 +528,7 @@ def plan_cover_cutting_path(input_img=None, tol=30, min_hole_dist=5, draw_on=Non
         # cropped_gray = cut_rect.crop_img(gray)
         # detect_holes(cropped_gray, draw_on=cropped_img)
         
-    return cut_path
+    return cut_path, holes_inside_cut_path
 
 def adjust_hole_center(image, hole_boxes):
     output = image.copy()

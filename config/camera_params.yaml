@@ -1,6 +1,7 @@
 camera: {
   realsense2_camera: {
 
+    enable_depth:  True,
     depth_width: 1280,
     depth_height: 720,
 

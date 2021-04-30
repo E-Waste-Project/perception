@@ -5,6 +5,7 @@ import numpy as np
 from sensor_msgs.msg import Image
 from sensor_msgs.msg import CameraInfo
 from std_msgs.msg import Float32MultiArray
+from std_msgs.msg import String
 from geometry_msgs.msg import PoseArray
 from geometry_msgs.msg import Pose
 import ros_numpy
@@ -19,6 +20,8 @@ class Subscribers():
         rospy.Subscriber("/cutting_path", Float32MultiArray,
                          self.cutting_callback)
         self.cut_xyz_pub = rospy.Publisher("/cut_xyz", PoseArray, queue_size=1)
+        self.screw_xyz_pub = rospy.Publisher("/screw_xyz", PoseArray, queue_size=1)
+        self.grip_xyz_pub = rospy.Publisher("/grip_xyz", PoseArray, queue_size=1)
 
     def calculate_dist_3D(self, msg):
         aligned_depth_image = ros_numpy.numpify(msg) * 0.001
@@ -44,7 +47,7 @@ class Subscribers():
         #print(contour_indices)
         contour_xyz = dist_mat[:, contour_indices[:, 0], contour_indices[:, 1]]
         pose_msg = PoseArray()
-        pose_msg.header.frame_id = "camera_color_optical_frame"
+        pose_msg.header.frame_id = "calibrated_frame"
         pose_msg.header.stamp = rospy.Time.now()
         pose_msg.poses = []
         print(contour_xyz.shape)
@@ -67,7 +70,14 @@ class Subscribers():
             pose_msg.poses.append(pose)
         # plt.plot(self.x_list,self.y_list)
         # plt.show(block=False)
-        self.cut_xyz_pub.publish(pose_msg)
+        received_msg = rospy.wait_for_message("/operation",String)
+        if received_msg.data == "Cutting":
+            self.cut_xyz_pub.publish(pose_msg)
+        elif received_msg.data == "Screw Loosening":
+            self.screw_xyz_pub.publish(pose_msg)
+        elif received_msg.data == "Gripping":
+            self.grip_xyz_pub.publish(pose_msg)
+
 
     def info_callback(self, msg):
         self.intrinsics['fx'] = msg.K[0]
