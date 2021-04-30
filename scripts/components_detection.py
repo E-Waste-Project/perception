@@ -272,7 +272,7 @@ class Model:
                     x1, y1 = x+w, y+h
                     if x <= px <= x1 and y <= py <= y1:
                         filtered_screw_boxes.append(screw_box)
-
+            self.refPt = []
             screw_boxes = filtered_screw_boxes
             # Visualise detected screws.
             for screw_box in screw_boxes:
@@ -282,7 +282,7 @@ class Model:
         cv2.imshow("image_window", image_np)
         key = cv2.waitKey(0) & 0xFF
 
-        cv2.destroyAllWindows()
+        cv2.destroyWindow("image_window")
 
         if key == ord('e'):
             return [], []
