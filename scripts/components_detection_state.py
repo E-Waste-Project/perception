@@ -158,7 +158,17 @@ class Model:
     
     def recieve_and_detect(self):
         # # Wait for rgb camera stream to publish a frame.
-        image_msg = rospy.wait_for_message(self.image_topic, Image)
+        while True:
+            try:
+                image_msg = rospy.wait_for_message(self.image_topic, Image,timeout=5)
+                break
+            except rospy.ROSException:
+                components_msg = String()
+                components_msg.data = "Camera Disconnected"
+                self.state_publisher.publish(components_msg)
+                print("Camera Disconnected")
+                connection_msg = rospy.wait_for_message("/connection_error_handled", String)
+                continue
         
         # Convert msg to numpy image.
         image_np = numpify(image_msg)
@@ -268,8 +278,8 @@ class Model:
                     image_np, (screw_box[0] + screw_box[2] // 2, screw_box[1] + screw_box[3] // 2), 1, (0, 0, 255), 2)
         
         # Visualise the cutting path.
-        for i in range(len(cut_path) - 1):
-            cv2.line(image_np, tuple(cut_path[i]), tuple(cut_path[i+1]), (0, 0, 255), 2)    
+        # for i in range(len(cut_path) - 1):
+        #     cv2.line(image_np, tuple(cut_path[i]), tuple(cut_path[i+1]), (0, 0, 255), 2)    
 
         # Show image and wait for pressed key to continue or exit(if key=='e').
         cv2.imshow("image_window", image_np)

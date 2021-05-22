@@ -247,9 +247,9 @@ def rectangular_path_method(holes_coords, left, right, upper, lower, min_hole_di
     
     return cut_rect, holes_inside_cut_path
 
-def custom_path_method(holes_coords, left, right, upper, lower, min_hole_dist):
+def custom_path_method(holes_coords, left, right, upper, lower, min_hole_dist, edges_to_include=None):
     """Produce a cutting path that preserves overall edge location but when a hole is near an edge,
-    It avoids the gole by moving around it then returning to the edge location, and continue
+    It avoids the hole by moving around it then returning to the edge location, and continue
     moving along it.
         
     param min_hole_dist: should be > hole diameter
@@ -291,6 +291,9 @@ def custom_path_method(holes_coords, left, right, upper, lower, min_hole_dist):
     handeled_u_right_corner = False
 
     for edge_num, edge in enumerate(edges.keys()):
+        if edges_to_include is not None:
+            if edge not in edges_to_include:
+                continue
         # Take only holes that are inside the edge length.
         condition = horizontal_condition if horizontal[edge] else vertical_condition
         filtered_holes_coords = list(filter(condition, holes_coords))
@@ -298,10 +301,10 @@ def custom_path_method(holes_coords, left, right, upper, lower, min_hole_dist):
         # Find holes that has its edge near edge of contour by at most min_hole_dist.
         if horizontal[edge]:
             holes_near_edge = list(filter(lambda hole:
-            (hole.y <= edges[edge] <= hole.y2), filtered_holes_coords))
+            (hole.y - min_hole_dist <= edges[edge] <= hole.y2 + min_hole_dist), filtered_holes_coords))
         else:
             holes_near_edge = list(filter(lambda hole:
-            (hole.x <= edges[edge] <= hole.x2), filtered_holes_coords))
+            (hole.x - min_hole_dist <= edges[edge] <= hole.x2 + min_hole_dist), filtered_holes_coords))
         
 
         # Sort holes according to edge so that path moves down->right->up->left.
@@ -330,47 +333,47 @@ def custom_path_method(holes_coords, left, right, upper, lower, min_hole_dist):
                 new_point_x, new_point_y = points_x[x_idx], points_y[y_idx]
 
                 # Upper Left Corner Hole
-                if (new_point_y < upper + min_hole_dist) and edge == "left":
+                if (new_point_y < upper + 2*min_hole_dist) and edge == "left":
                     if idx == 0: 
                         continue
                     new_point_y = upper
                     cut_path[0] = (new_point_x, new_point_y)
                     cut_path[-1] = (new_point_x, new_point_y)
                     handeled_u_left_corner = True
-                elif (new_point_x < left + min_hole_dist) and edge == "upper" and handeled_u_left_corner:
+                elif (new_point_x < left + 2*min_hole_dist) and edge == "upper" and handeled_u_left_corner:
                         break
                 
                 # Lower Left Corner Hole
-                elif (new_point_y > lower - min_hole_dist) and edge == "left":
+                elif (new_point_y > lower - 2*min_hole_dist) and edge == "left":
                     if idx == 3: 
                         continue
                     new_point_y = lower
                     handeled_l_left_corner = True
-                    cut_path.remove(cut_path[p_idx - 1])
+                    cut_path.remove(cut_path[p_idx])
                     prev_edges_points_num -= 1
-                elif (new_point_x < left + min_hole_dist) and edge == "lower" and handeled_l_left_corner:
+                elif (new_point_x < left + 2*min_hole_dist) and edge == "lower" and handeled_l_left_corner:
                         break
 
                 # Lower Right Corner Hole
-                elif (new_point_x > right - min_hole_dist) and edge == "lower":
+                elif (new_point_x > right - 2*min_hole_dist) and edge == "lower":
                     if idx == 3: 
                         continue
                     new_point_x = right
                     handeled_l_right_corner = True
                     cut_path.remove(cut_path[p_idx])
                     prev_edges_points_num -= 1
-                elif (new_point_y >= lower) and edge == "right" and handeled_l_right_corner:
+                elif (new_point_y >= lower - 2*min_hole_dist) and edge == "right" and handeled_l_right_corner:
                         break
 
                 # Upper Right Corner Hole
-                elif (new_point_y <= upper) and edge == "right":
+                elif (new_point_y <= (upper + 2*min_hole_dist)) and edge == "right":
                     if idx == 3:
                         continue
                     new_point_y = upper
                     handeled_u_right_corner = True
-                    cut_path.remove(cut_path[p_idx - 1])
+                    cut_path.remove(cut_path[p_idx])
                     prev_edges_points_num -= 1
-                elif (new_point_x >= right) and edge == "upper" and handeled_u_right_corner:
+                elif (new_point_x >= right - 2*min_hole_dist) and edge == "upper" and handeled_u_right_corner:
                         break
                 
                 # Remove edges that are near each other to save time and make it cleaner.
@@ -390,8 +393,8 @@ def custom_path_method(holes_coords, left, right, upper, lower, min_hole_dist):
                     if (idx == 1 and idx_0_flag):
                         if idx == 1: idx_0_flag = False
                         if horizontal[edge]:
-                            if (cut_path[p_idx - 1][1] >= new_point_y and edge == "lower"
-                            or cut_path[p_idx - 1][1] <= new_point_y and edge == "upper"):
+                            if (cut_path[p_idx - 1][1] <= new_point_y and edge == "lower"
+                            or cut_path[p_idx - 1][1] >= new_point_y and edge == "upper"):
                                 new_point_x = cut_path[p_idx - 1][0]
                             else:
                                 cut_path[p_idx - 1][0] = new_point_x
@@ -440,7 +443,7 @@ def interpolate_path(path, step=2):
     return new_path
         
 def plan_cover_cutting_path(input_img=None, tol=30, min_hole_dist=5, draw_on=None,
- laptop_coords=None, holes_coords=None, method=0, interpolate=True, interp_step=2):
+ laptop_coords=None, holes_coords=None, method=0, interpolate=True, interp_step=2, edges_to_include=None):
     """Takes gray_scale img containing a laptop Or takes laptop & holes coordinates,
      returns cutting path points as list of tuples.
 
@@ -510,7 +513,7 @@ def plan_cover_cutting_path(input_img=None, tol=30, min_hole_dist=5, draw_on=Non
                 holes_inside_cut_path.append([hole_rect.x, hole_rect.y, hole_rect.w, hole_rect.h])
             cut_path = cut_rect.rect_to_path()
         elif method == 1:
-            cut_path = custom_path_method(holes_coords, left, right, upper, lower, min_hole_dist)
+            cut_path = custom_path_method(holes_coords, left, right, upper, lower, min_hole_dist, edges_to_include=edges_to_include)
         elif method is None:
             cut_path = cut_rect.rect_to_path()
         else:
@@ -529,6 +532,76 @@ def plan_cover_cutting_path(input_img=None, tol=30, min_hole_dist=5, draw_on=Non
         # detect_holes(cropped_gray, draw_on=cropped_img)
         
     return cut_path, holes_inside_cut_path
+
+def group_boxes(boxes, grouping_dist, condition):
+    box_groups = []
+    for bnum, box in enumerate(boxes):
+        if bnum == len(boxes) - 1:
+            break
+        nbox = boxes[bnum+1]
+        cx1, cy1, cx2, cy2 = box.x, box.y, box.x2, box.y2
+        nx1, ny1, nx2, ny2 = nbox.x, nbox.y, nbox.x2, nbox.y2
+        vars_dict = {'cx1':cx1, 'cy1':cy1, 'cx2': cx2, 'cy2':cy2, 'nx1':nx1, 'ny1':ny1, 'nx2':nx2, 'ny2':ny2}
+        if bnum == 0:
+            box_groups.append([box])
+        if (vars_dict[condition[0]] - vars_dict[condition[1]]) < grouping_dist:
+            box_groups[-1].append(nbox)
+        else:
+            box_groups.append([nbox])
+    return box_groups
+
+def plan_port_cutting_path(motherboard_coords, ports_coords, near_edge_dist, grouping_dist, cutting_dist):
+    left, upper, w, h = motherboard_coords[0], motherboard_coords[1], motherboard_coords[2], motherboard_coords[3]
+    right, lower = left + w, upper + h
+    motherboard_sides = (left, upper, right, lower)
+    if ports_coords is not None:
+        ports_coords = [Rect(*port) for port in deepcopy(ports_coords)]
+        
+    ports_near_left_edge = list(filter(lambda coord: (coord.x - near_edge_dist <= left <= coord.x2 + near_edge_dist), ports_coords))
+    ports_near_lower_edge = list(filter(lambda coord: (coord.y - near_edge_dist <= lower <= coord.y2 + near_edge_dist), ports_coords))
+    ports_near_right_edge = list(filter(lambda coord: (coord.x - near_edge_dist <= right <= coord.x2 + near_edge_dist), ports_coords))
+    ports_near_upper_edge = list(filter(lambda coord: (coord.y - near_edge_dist <= upper <= coord.y2 + near_edge_dist), ports_coords))
+    
+    ports_near_left_edge = sorted(ports_near_left_edge, key=lambda coord: coord.y, reverse=False)
+    ports_near_lower_edge = sorted(ports_near_lower_edge, key=lambda coord: coord.x, reverse=False)
+    ports_near_right_edge = sorted(ports_near_right_edge, key=lambda coord: coord.y2, reverse=True)
+    ports_near_upper_edge = sorted(ports_near_upper_edge, key=lambda coord: coord.x2, reverse=True)
+
+    port_groups_near_left_edge = group_boxes(ports_near_left_edge, grouping_dist, ['ny1', 'cy2'])
+    port_groups_near_lower_edge = group_boxes(ports_near_lower_edge, grouping_dist, ['nx1', 'cx2'])
+    port_groups_near_right_edge = group_boxes(ports_near_right_edge, grouping_dist, ['cy1', 'ny2'])
+    port_groups_near_upper_edge = group_boxes(ports_near_upper_edge, grouping_dist, ['cx1', 'nx2'])
+    
+    cut_paths = []
+    for group in port_groups_near_left_edge:
+        x = min(group, key=lambda port: port.x).x
+        y = group[0].y - cutting_dist
+        x2 = max(group, key=lambda port: port.x2).x2 + cutting_dist
+        y2 = group[-1].y2 + cutting_dist
+        cut_paths.append([(x, y), (x2, y), (x2, y2), (x, y2)])
+    
+    for group in port_groups_near_lower_edge:
+        x = group[0].x - cutting_dist
+        y = min(group, key=lambda port: port.y).y - cutting_dist
+        x2 = group[-1].x2 + cutting_dist
+        y2 = max(group, key=lambda port: port.y2).y2
+        cut_paths.append([(x, y2), (x, y), (x2, y), (x2, y2)])
+    
+    for group in port_groups_near_right_edge:
+        x = min(group, key=lambda port: port.x).x - cutting_dist
+        y = group[-1].y - cutting_dist
+        x2 = max(group, key=lambda port: port.x2).x2
+        y2 = group[0].y2 + cutting_dist
+        cut_paths.append([(x2, y2), (x, y2), (x, y), (x2, y)])
+    
+    for group in port_groups_near_upper_edge:
+        x = group[0].x - cutting_dist
+        y = min(group, key=lambda port: port.y).y
+        x2 = group[-1].x2 + cutting_dist
+        y2 = max(group, key=lambda port: port.y2).y2 + cutting_dist
+        cut_paths.append([(x2, y), (x2, y2), (x, y2), (x, y)])
+    
+    return cut_paths            
 
 def adjust_hole_center(image, hole_boxes):
     output = image.copy()
