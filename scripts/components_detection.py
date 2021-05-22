@@ -2,7 +2,7 @@
 import cv2
 from perception.yolo_detector import Yolo
 from perception.coco_datasets import convert_format
-from perception.laptop_perception_helpers import plan_cover_cutting_path, adjust_hole_center, interpolate_path, plan_port_cutting_path
+from perception.laptop_perception_helpers import plan_cover_cutting_path, interpolate_path, plan_port_cutting_path
 import sys
 import rospy
 from sensor_msgs.msg import Image
@@ -17,19 +17,20 @@ import warnings
 warnings.filterwarnings('ignore')   # Suppress Matplotlib warnings
 
 
+user = 'abdelrhman'
+# user = 'zaferpc'
+ws = 'ewaste_ws' if user == 'abdelrhman' else 'abb_ws'
+
 def draw_lines(image_np, points_list):
     for i in range(len(points_list) - 1):
-        (x1, y1) = points_list[i]
-        (x2, y2) = points_list[i+1]
-        if sqrt((x1-x2)**2 + (y1-y2)**2) <= 300:
-            cv2.line(image_np, tuple(points_list[i]), tuple(
-                points_list[i+1]), (0, 0, 255), 2)
+        cv2.line(image_np, tuple(points_list[i]), tuple(
+            points_list[i+1]), (0, 0, 255), 2)
 
 
 class Model:
     def __init__(self,
                  model_type='ssd',
-                 model_path='/home/zaferpc/abb_ws/src/perception/models/',
+                 model_path='/home/' + user + '/' + ws + '/src/perception/models/',
                  image_topic='/camera/color/image_raw',
                  cutting_plan_topic='/cutting_path',
                  imgsz=1280):
@@ -101,7 +102,7 @@ class Model:
                 'WLAN':              {'thresh': 0.7, 'id': 9},
                 'CD-ROM':            {'thresh': 0.5, 'id': 10},
                 'Laptop_Back_Cover': {'thresh': 0.5, 'id': 11},
-                'Port':              {'thresh': 0.25, 'id': 12},
+                'Port':              {'thresh': 0.2, 'id': 12},
                 'RTC_Battery':       {'thresh': 0.5, 'id': 13},
                 'HD_Bay':            {'thresh': 0.5, 'id': 14},
                 'CD_Bay':            {'thresh': 0.5, 'id': 15},
@@ -111,6 +112,7 @@ class Model:
 
         self.image_topic = image_topic
         self.image = None
+        self.imgsz = imgsz
         self.refPt = []
         cv2.namedWindow("image")
         cv2.setMouseCallback("image", self.choose_screw)
@@ -142,6 +144,7 @@ class Model:
     def recieve_and_detect(self,image_path=None, read_img=False):
         if image_path is not None and read_img:
             image_np = cv2.imread(image_path)
+            image_np = cv2.resize(image_np, (832, 480))
         else:
             # # Wait for rgb camera stream to publish a frame.
             image_msg = rospy.wait_for_message(self.image_topic, Image)
@@ -243,7 +246,12 @@ class Model:
         cover_boxes, cover_scores = self.get_class_detections(detections=detections,
                                                               class_name=box_cname,
                                                               get_scores=True)
-
+        if len(cover_boxes) < 1:
+            box_cname = 'Laptop_Back_Cover'
+            # Get detected laptop_covers.
+            cover_boxes, cover_scores = self.get_class_detections(detections=detections,
+                                                              class_name=box_cname,
+                                                              get_scores=True)
         # Get laptop_cover with highest confidence.
         best_cover_score = 0
         best_cover_box = []
@@ -251,36 +259,32 @@ class Model:
             if score > best_cover_score:
                 best_cover_score = score
                 best_cover_box = box
-
-        # if cname == 'Motherboard':
-        #     # enlarge Motherboard box by tol
-        #     best_cover_box = [best_cover_box[0] - tol, best_cover_box[1] - tol, best_cover_box[2] +
-        #                 2*tol, best_cover_box[3] + 2*tol]
-        #     tol = 0
         
         screw_boxes = []
         for cname in self.class_thresh.keys():
-            if cname in ['Port', 'Screw', 'Connector']:
+            if cname in ['Port', 'Connector']:
                 screw_boxes.extend(self.get_class_detections(detections=detections,
                                                         class_name=cname,
                                                         min_score=min_screw_score))
         
-        cpu_boxes = self.get_class_detections(detections=detections,
-                                              class_name='CPU',
-                                              min_score=0)
-        new_screw_boxes = []
-        for screw_box in screw_boxes:
-            near = False
-            for cpu_box in cpu_boxes:
-                if self.box_near_by_dist(screw_box, cpu_box, min_hole_dist):
-                    continue
-                else:
-                    near = True
-                    break
-            if not near:
-                new_screw_boxes.append(screw_box)
-        screw_boxes = new_screw_boxes
-
+        # cpu_boxes = self.get_class_detections(detections=detections,
+        #                                       class_name='CPU',
+        #                                       min_score=0)
+        # new_screw_boxes = []
+        # for screw_box in screw_boxes:
+        #     near = False
+        #     for cpu_box in cpu_boxes:
+        #         if not self.box_near_by_dist(screw_box, cpu_box, min_hole_dist):
+        #             continue
+        #         else:
+        #             near = True
+        #             break
+        #     if not near:
+        #         new_screw_boxes.append(screw_box)
+        # screw_boxes = new_screw_boxes
+        
+        ports_cut_paths = []
+        cut_path = []
         if len(best_cover_box) > 0 and len(screw_boxes) > 0:
             if box_cname == 'Motherboard':
                 ports_cut_paths = plan_port_cutting_path(best_cover_box, screw_boxes, near_edge_dist=20, grouping_dist=40, cutting_dist=5)
@@ -291,9 +295,6 @@ class Model:
                                                                         method=method,
                                                                         interpolate=False, interp_step=4,
                                                                         tol=tol, min_hole_dist=min_hole_dist)
-            
-        else:
-            cut_path = []
 
         image_np = np.copy(image)
 
@@ -378,18 +379,18 @@ if __name__ == "__main__":
     rospy.init_node("components_detection")
 
     sys.path.insert(
-        0, '/home/zaferpc/TensorFlow/workspace/yolov5')
+        0, '/home/' + user + '/TensorFlow/workspace/yolov5')
 
     publish_cut_path = False
     publish_screw_centers = True
 
-    model = Model(model_path='/home/zaferpc/abb_ws/src/perception/models/',
+    model = Model(model_path='/home/' + user + '/' + ws + '/src/perception/models/',
                   image_topic='/camera/color/image_raw',
                   cutting_plan_topic="/cutting_path", model_type='yolo', imgsz=832)
 
     while not rospy.is_shutdown():
         # Recieve an image msg from camera topic, then, return image and detections.
-        image, detections = model.recieve_and_detect(image_path='/home/zaferpc/TensorFlow/workspace/training_demo/images/test/10.jpg',
+        image, detections = model.recieve_and_detect(image_path='/home/abdelrhman/TensorFlow/workspace/training_demo/images/test/17.jpg',
                                                      read_img=True)
 
         # Generate the cover cutting path, and screw holes from given detections and image to visulaisSe on.
