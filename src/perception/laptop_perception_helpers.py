@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 from bisect import bisect_right, bisect_left
-from copy import deepcopy,copy
+from copy import deepcopy
 
 
 class Rect:
@@ -40,6 +40,18 @@ class Rect:
     
     def add(self, rect):
         self.shift_by(rect.x, rect.y)
+    
+    def __eq__(self, rect):
+        if self.x == rect.x and self.y == rect.y and self.w == rect.w and self.h == rect.h:
+            return True
+        else:
+            return False
+    
+    def __ne__(self, rect):
+        return False if self == rect else True
+    
+    def __str__(self):
+        return "({0}, {1}, {2}, {3})".format(self.x, self.y, self.w, self.h)
 
     def rect_to_path(self):
         return [(self.x, self.y), (self.x, self.y2), (self.x2, self.y2), (self.x2, self.y), (self.x, self.y)]
@@ -575,23 +587,51 @@ def plan_port_cutting_path(motherboard_coords, ports_coords, near_edge_dist, gro
     ports_near_right_edge = sorted(ports_near_right_edge, key=lambda coord: coord.y2, reverse=True)
     ports_near_upper_edge = sorted(ports_near_upper_edge, key=lambda coord: coord.x2, reverse=True)
 
-    # Remove dublicated ports that are handeled on two edges, so that they are handeled only once.
-    for pnum, left_port in enumerate(ports_near_left_edge):
-        for right_port in enumerate(ports_near_right_edge):
-            ports_near_lower_edge = list(filter(lambda port: port != left_port and port != right_port, ports_near_lower_edge))
-            ports_near_upper_edge = list(
-                filter(lambda port: port != left_port and port != right_port, ports_near_upper_edge))
-
-
     # Group ports that are near each other together to be cut all at once.
     port_groups_near_left_edge = group_boxes(ports_near_left_edge, grouping_dist, ['ny1', 'cy2'])
     port_groups_near_lower_edge = group_boxes(ports_near_lower_edge, grouping_dist, ['nx1', 'cx2'])
     port_groups_near_right_edge = group_boxes(ports_near_right_edge, grouping_dist, ['cy1', 'ny2'])
     port_groups_near_upper_edge = group_boxes(ports_near_upper_edge, grouping_dist, ['cx1', 'nx2'])
+
+    # Remove dublicated ports that are handeled on two edges, so that they are handeled only once.
+    port_groups_near_vertical_edges = []
+    port_groups_near_vertical_edges.extend(port_groups_near_right_edge)
+    port_groups_near_vertical_edges.extend(port_groups_near_left_edge)
+    vertical_ports_to_remove = []
+    ports_to_remove_near_lower_edge = []
+    ports_to_remove_near_upper_edge = []
+    for vg_idx, vertical_port_group in enumerate(port_groups_near_vertical_edges):
+        for v_idx, vertical_port in enumerate(vertical_port_group):
+            for pg_idx, port_group in enumerate(port_groups_near_lower_edge):
+                for p_idx, port in enumerate(port_group):
+                    if port == vertical_port:
+                        if len(port_group) >= len(vertical_port_group):
+                            vertical_ports_to_remove.append((vg_idx, v_idx))
+                        else:
+                            ports_to_remove_near_lower_edge.append(
+                                pg_idx, p_idx)
+            for pg_idx, port_group in enumerate(port_groups_near_upper_edge):
+                for p_idx, port in enumerate(port_group):
+                    if port == vertical_port:
+                        if len(port_group) >= len(vertical_port_group):
+                            vertical_ports_to_remove.append((vg_idx, v_idx))
+                        else:
+                            ports_to_remove_near_upper_edge.append(
+                                pg_idx, p_idx)
+    
+    [port_groups_near_lower_edge[g_idx].pop(
+        p_idx) for g_idx, p_idx in ports_to_remove_near_lower_edge]
+    [port_groups_near_upper_edge[g_idx].pop(
+        p_idx) for g_idx, p_idx in ports_to_remove_near_upper_edge]
+    [port_groups_near_vertical_edges[g_idx].pop(
+        p_idx) for g_idx, p_idx in vertical_ports_to_remove]
+      
     
     # Construct ports cutting path for each group of ports for each edge
     cut_paths = []
     for group in port_groups_near_left_edge:
+        if len(group) < 1:
+            continue
         x = min(group, key=lambda port: port.x).x
         y = group[0].y - cutting_dist
         x2 = max(group, key=lambda port: port.x2).x2 + cutting_dist
@@ -599,6 +639,8 @@ def plan_port_cutting_path(motherboard_coords, ports_coords, near_edge_dist, gro
         cut_paths.append([(x, y), (x2, y), (x2, y2), (x, y2)])
     
     for group in port_groups_near_lower_edge:
+        if len(group) < 1:
+            continue
         x = group[0].x - cutting_dist
         y = min(group, key=lambda port: port.y).y - cutting_dist
         x2 = group[-1].x2 + cutting_dist
@@ -606,6 +648,8 @@ def plan_port_cutting_path(motherboard_coords, ports_coords, near_edge_dist, gro
         cut_paths.append([(x, y2), (x, y), (x2, y), (x2, y2)])
     
     for group in port_groups_near_right_edge:
+        if len(group) < 1:
+            continue
         x = min(group, key=lambda port: port.x).x - cutting_dist
         y = group[-1].y - cutting_dist
         x2 = max(group, key=lambda port: port.x2).x2
@@ -613,6 +657,8 @@ def plan_port_cutting_path(motherboard_coords, ports_coords, near_edge_dist, gro
         cut_paths.append([(x2, y2), (x, y2), (x, y), (x2, y)])
     
     for group in port_groups_near_upper_edge:
+        if len(group) < 1:
+            continue
         x = group[-1].x - cutting_dist
         y = min(group, key=lambda port: port.y).y
         x2 = group[0].x2 + cutting_dist
