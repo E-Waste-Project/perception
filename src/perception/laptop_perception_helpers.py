@@ -91,6 +91,80 @@ def read_and_resize(directory, img_id, size=(720, 480), compression='.jpg'):
     return read_img
 
 
+def draw_lines(image_np, points_list):
+    for i in range(len(points_list) - 1):
+        cv2.line(image_np, tuple(points_list[i]), tuple(
+            points_list[i+1]), (0, 0, 255), 2)
+
+
+def draw_boxes(image, boxes, color=(0, 255, 0), thickness=2, draw_center=False):
+    for box in boxes:
+        cv2.rectangle(image, tuple(box[0:2]),
+                      (box[0] + box[2], box[1] + box[3]), color, thickness)
+        if draw_center:
+            cv2.circle(
+                image, (box[0] + box[2] // 2, box[1] + box[3] // 2), 1, color, thickness)
+
+
+def point_near_box_by_dist(point, box, dist):
+        x, y = point[0], point[1]
+        x1, y1, w1, h1 = box[0], box[1], box[2], box[3]
+        x2, y2 = x1 + w1, y1 + h1
+        if (abs(x1 - x) <= dist and abs(y1 - y) <= dist) \
+        or (abs(x1 - x) <= dist and abs(y2 - y) <= dist) \
+        or (abs(x2 - x) <= dist and abs(y2 - y) <= dist) \
+        or (abs(x2 - x) <= dist and abs(y1 - y) <= dist):
+            return True
+        else:
+            return False
+
+def box_near_by_dist(box1, boxes, dist):
+    x1, y1, w, h = box1[0], box1[1], box1[2], box1[3]
+    x2, y2 = x1 + w, y1 + h
+    points = [(x1, y1), (x1, y2), (x2, y2), (x2, y1)]
+    near = False if len(boxes) < 1 else True
+    for box in boxes:
+        for point in points:
+            near = near and point_near_box_by_dist(point, box, dist) 
+    return near
+
+
+def filter_boxes_from_image(boxes, image, window_name, create_new_window=True):
+
+    print("=======================================================================")
+    print("Choose boxes by clicking on them on the image, Press 'c' when finished")
+    print("=======================================================================")
+
+    refPt = []
+    img = image.copy()
+    if create_new_window:
+        cv2.namedWindow(window_name)
+
+    def choose_screw(event, x, y, flags, param):
+        # if the left mouse button was clicked, record the point
+        if event == cv2.EVENT_LBUTTONUP:
+            refPt.append((x, y))
+            # draw a rectangle around the region of interest
+            cv2.circle(img, refPt[-1], 5, (0, 255, 0), 5)
+
+    cv2.setMouseCallback(window_name, choose_screw)
+    key = 0
+    # Show image and wait for pressed key to continue or exit(if key=='e').
+    while key != ord('c'):
+        cv2.imshow(window_name, img)
+        key = cv2.waitKey(20) & 0xFF
+    cv2.destroyWindow(window_name)
+    filtered_boxes = []
+    for point in refPt:
+        px, py = point
+        for box in boxes:
+            x, y, w, h = box
+            x1, y1 = x+w, y+h
+            if x <= px <= x1 and y <= py <= y1:
+                filtered_boxes.append(box)
+    return filtered_boxes
+
+
 def preprocess(input_img, gauss_kernel=21, clahe_kernel=2,
                morph_kernel=3, iterations=3, dilate=False, use_canny=False, thresh1=42, thresh2=111):
     # Contrast Norm + Gauss Blur + Adaptive Threshold + Dilation + Canny
@@ -594,6 +668,7 @@ def plan_port_cutting_path(motherboard_coords, ports_coords, near_edge_dist, gro
     port_groups_near_upper_edge = group_boxes(ports_near_upper_edge, grouping_dist, ['cx1', 'nx2'])
 
     # Remove dublicated ports that are handeled on two edges, so that they are handeled only once.
+    # Also keep it in the group with the bigger size to save time in cutting operation.
     port_groups_near_vertical_edges = []
     port_groups_near_vertical_edges.extend(port_groups_near_right_edge)
     port_groups_near_vertical_edges.extend(port_groups_near_left_edge)
@@ -606,24 +681,25 @@ def plan_port_cutting_path(motherboard_coords, ports_coords, near_edge_dist, gro
                 for p_idx, port in enumerate(port_group):
                     if port == vertical_port:
                         if len(port_group) >= len(vertical_port_group):
-                            vertical_ports_to_remove.append((vg_idx, v_idx))
+                            vertical_ports_to_remove.append(
+                                (vg_idx, vertical_port))
                         else:
                             ports_to_remove_near_lower_edge.append(
-                                pg_idx, p_idx)
+                                (pg_idx, port))
             for pg_idx, port_group in enumerate(port_groups_near_upper_edge):
                 for p_idx, port in enumerate(port_group):
                     if port == vertical_port:
                         if len(port_group) >= len(vertical_port_group):
-                            vertical_ports_to_remove.append((vg_idx, v_idx))
+                            vertical_ports_to_remove.append(
+                                (vg_idx, vertical_port))
                         else:
                             ports_to_remove_near_upper_edge.append(
-                                pg_idx, p_idx)
-    
-    [port_groups_near_lower_edge[g_idx].pop(
+                                (pg_idx, port))
+    [port_groups_near_lower_edge[g_idx].remove(
         p_idx) for g_idx, p_idx in ports_to_remove_near_lower_edge]
-    [port_groups_near_upper_edge[g_idx].pop(
+    [port_groups_near_upper_edge[g_idx].remove(
         p_idx) for g_idx, p_idx in ports_to_remove_near_upper_edge]
-    [port_groups_near_vertical_edges[g_idx].pop(
+    [port_groups_near_vertical_edges[g_idx].remove(
         p_idx) for g_idx, p_idx in vertical_ports_to_remove]
       
     
