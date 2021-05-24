@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-from itertools import filterfalse
 import cv2
 from perception.yolo_detector import Yolo
 from perception.coco_datasets import convert_format
@@ -21,9 +20,8 @@ warnings.filterwarnings('ignore')   # Suppress Matplotlib warnings
 
 
 user = 'abdelrhman'
-# user = 'zaferpc'
 ws = 'ewaste_ws' if user == 'abdelrhman' else 'abb_ws'
-
+# user = 'zaferpc'
 
 class Model:
     def __init__(self,
