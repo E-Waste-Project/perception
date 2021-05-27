@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<launch>
+    <arg name="publish_cut_path" default="False" />
+    <arg name="publish_screw_centers" default="True" />
+    <arg name="use_state" default="False" />
+    <node pkg="perception" type="components_detection.py" name="components_detection" output='screen'>
+        <param name="publish_cut_path" type="bool" value='$(arg publish_cut_path)'/>
+        <param name="publish_screw_centers" type="bool" value='$(arg publish_screw_centers)'/>
+        <param name="use_state" type="bool" value='$(arg use_state)'/>
+    </node>
+</launch>
