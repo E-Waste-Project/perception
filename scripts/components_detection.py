@@ -8,6 +8,7 @@ from perception.laptop_perception_helpers import plan_cover_cutting_path, interp
 import sys
 import rospy
 from sensor_msgs.msg import Image
+from std_msgs.msg import String
 from std_msgs.msg import Float32MultiArray
 from ros_numpy import numpify
 
@@ -15,13 +16,12 @@ from math import sqrt
 import numpy as np
 import tensorflow as tf
 import time
+import socket
 import warnings
 warnings.filterwarnings('ignore')   # Suppress Matplotlib warnings
 
-
-user = 'abdelrhman'
+user = socket.gethostname()
 ws = 'ewaste_ws' if user == 'abdelrhman' else 'abb_ws'
-# user = 'zaferpc'
 
 class Model:
     def __init__(self,
@@ -125,6 +125,43 @@ class Model:
         self.path_publisher = rospy.Publisher(cutting_plan_topic,
                                               Float32MultiArray,
                                               queue_size=1)
+        self.state_publisher = rospy.Publisher(
+            "/found_components", String, queue_size=1)
+        rospy.Subscriber("/capture_state", String, self.capture_callback)
+    
+    def capture_callback(self, msg):
+        # Recieve an image msg from camera topic, then, return image and detections.
+        image, detections = model.recieve_and_detect()
+
+        # Generate the cover cutting path, and screw holes from given detections and image to visulaisSe on.
+        cut_path, screw_holes = model.generate_cover_cutting_path(image, detections,
+                                                                  min_screw_score=0,
+                                                                  tol=20, method=1, min_hole_dist=10, hole_tol=0,  # generated path params
+                                                                  return_holes_inside_cut_path=False,
+                                                                  filter_screws=False,
+                                                                  avoid_screws_near_cpu=False)
+
+        components_msg = String()
+        cut_boxes = []
+
+        # Publish the generated cutting path if not empty.
+        if len(cut_path) > 0 and publish_cut_path:
+            cut_boxes.extend(cut_path)
+            components_msg.data = "cover"
+
+        # Publish the generated cutting path if not empty.
+        if len(screw_holes) > 0 and publish_screw_centers:
+            print("Publishing screw cut paths")
+            # screw_centers = [(sh[0] + (sh[2] // 2), sh[1] + (sh[3] // 2)) for sh in screw_holes]
+            for sh in screw_holes:
+                x, y, x2, y2 = sh[0], sh[1], sh[0] + sh[2], sh[1] + sh[3]
+                box_path = [(x, y), (x, y2), (x2, y2), (x2, y), (x, y)]
+                cut_boxes.extend(interpolate_path(box_path))
+            components_msg.data = "screws"
+
+
+        model.publish_cut_path(cut_boxes)
+        self.state_publisher.publish(components_msg)
 
     def remove_detections(self, detections, indicies_to_remove):
         detections['detection_boxes'] = np.delete(
@@ -134,20 +171,31 @@ class Model:
         detections['detection_scores'] = np.delete(
             detections['detection_scores'], indicies_to_remove)
 
-    def recieve_and_detect(self,image_path=None, read_img=False):
+    def recieve_and_detect(self, read_img=False, image_path=None):
+        # Either read image from path or wait for ros message
         if image_path is not None and read_img:
             image_np = cv2.imread(image_path)
             image_np = cv2.resize(image_np, (832, 480))
         else:
             # # Wait for rgb camera stream to publish a frame.
-            image_msg = rospy.wait_for_message(self.image_topic, Image)
+            while True:
+                try:
+                    image_msg = rospy.wait_for_message(
+                        self.image_topic, Image, timeout=5)
+                    break
+                except rospy.ROSException:
+                    components_msg = String()
+                    components_msg.data = "Camera Disconnected"
+                    self.state_publisher.publish(components_msg)
+                    print("Camera Disconnected")
+                    connection_msg = rospy.wait_for_message(
+                        "/connection_error_handled", String)
+                    continue
 
             # Convert msg to numpy image.
             image_np = numpify(image_msg)
 
             image_np = cv2.cvtColor(image_np, cv2.COLOR_BGR2RGB)
-        # cv2.imshow("image", image_np)
-        # cv2.waitKey(0)
 
         # Run forward prop of model to get the detections.
         detections = self.detect_fn(image_np)
@@ -323,45 +371,54 @@ if __name__ == "__main__":
     sys.path.insert(
         0, '/home/' + user + '/TensorFlow/workspace/yolov5')
 
-    publish_cut_path = False
-    publish_screw_centers = True
+    # Parameters that can be given from command-line / parameter-server.
+    ns = '/components_detection'
+    publish_cut_path = rospy.get_param(     ns+'/publish_cut_path')
+    publish_screw_centers = rospy.get_param(ns+'/publish_screw_centers')
+    use_state = rospy.get_param(            ns+'/use_state')
 
     model = Model(model_path='/home/' + user + '/' + ws + '/src/perception/models/',
                   image_topic='/camera/color/image_raw',
                   cutting_plan_topic="/cutting_path", model_type='yolo', imgsz=832)
+
     img_num = 10
+    images_path = '/home/' + user + '/TensorFlow/workspace/training_demo/images/test/'
+    if use_state:
+        rospy.spin()
+    else:
+        while not rospy.is_shutdown():
+            # Recieve an image msg from camera topic, then, return image and detections.
+            image, detections = model.recieve_and_detect(
+                read_img=True,
+                image_path= images_path + str(img_num) + '.jpg')
 
-    while not rospy.is_shutdown():
-        images_path = '/home/abdelrhman/TensorFlow/workspace/training_demo/images/test/'
-        # Recieve an image msg from camera topic, then, return image and detections.
-        image, detections = model.recieve_and_detect(image_path=images_path + str(img_num) + '.jpg',
-                                                     read_img=True)
+            # Generate the cover cutting path, and screw holes from given detections and image to visulaisSe on.
+            cut_path, screw_holes = model.generate_cover_cutting_path(image, detections,
+                                                                    min_screw_score=0,
+                                                                    # generated path params
+                                                                    tol=20, method=1, min_hole_dist=10, hole_tol=0,
+                                                                    return_holes_inside_cut_path=False,
+                                                                    filter_screws=False,
+                                                                    avoid_screws_near_cpu=True)
 
-        # Generate the cover cutting path, and screw holes from given detections and image to visulaisSe on.
-        cut_path, screw_holes = model.generate_cover_cutting_path(image, detections,
-                                                                  min_screw_score=0,
-                                                                  tol=20, method=1, min_hole_dist=10, hole_tol=0,  # generated path params
-                                                                  return_holes_inside_cut_path=False,
-                                                                  filter_screws=False,
-                                                                  avoid_screws_near_cpu=True)
+            # Publish the generated cutting path if not empty.
+            if len(screw_holes) > 0 and publish_screw_centers:
+                print("Publishing screw cut paths")
+                # screw_centers = [(sh[0] + (sh[2] // 2), sh[1] + (sh[3] // 2)) for sh in screw_holes]
+                cut_boxes = []
+                for sh in screw_holes:
+                    x, y, x2, y2 = sh[0], sh[1], sh[0] + sh[2], sh[1] + sh[3]
+                    box_path = [(x, y), (x, y2), (x2, y2), (x2, y), (x, y)]
+                    cut_boxes.extend(interpolate_path(box_path))
+                cut_boxes.extend(cut_path)
+                model.publish_cut_path(cut_boxes)
+            # Publish the generated cutting path if not empty.
+            if len(cut_path) > 0 and publish_cut_path:
+                model.publish_cut_path(cut_path)
 
-        # Publish the generated cutting path if not empty.
-        if len(screw_holes) > 0 and publish_screw_centers:
-            print("Publishing screw cut paths")
-            # screw_centers = [(sh[0] + (sh[2] // 2), sh[1] + (sh[3] // 2)) for sh in screw_holes]
-            cut_boxes = []
-            for sh in screw_holes:
-                x, y, x2, y2 = sh[0], sh[1], sh[0] + sh[2], sh[1] + sh[3]
-                box_path = [(x, y), (x, y2), (x2, y2), (x2, y), (x, y)]
-                cut_boxes.extend(interpolate_path(box_path))
-            cut_boxes.extend(cut_path)
-            model.publish_cut_path(cut_boxes)
-        # Publish the generated cutting path if not empty.
-        if len(cut_path) > 0 and publish_cut_path:
-            model.publish_cut_path(cut_path)
-
-        print("Input Any Key to Continue")
-        input()
-        img_num += 1
-        if img_num > 17:
-            img_num = 10
+            print("Input Any Key to Continue")
+            input()
+            img_num += 1
+            if img_num > 17:
+                img_num = 10
+    
