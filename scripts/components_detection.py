@@ -97,7 +97,7 @@ class Model:
                 'Battery':           {'thresh': 0.5, 'id': 8},
                 'WLAN':              {'thresh': 0.7, 'id': 9},
                 'CD-ROM':            {'thresh': 0.5, 'id': 10},
-                'Laptop_Back_Cover': {'thresh': 0.5, 'id': 11},
+                'Laptop_Back_Cover': {'thresh': 0.6, 'id': 11},
                 'Port':              {'thresh': 0.2, 'id': 12},
                 'RTC_Battery':       {'thresh': 0.5, 'id': 13},
                 'HD_Bay':            {'thresh': 0.5, 'id': 14},
