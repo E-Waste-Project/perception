@@ -144,6 +144,13 @@ class Model:
         components_msg = String()
         cut_boxes = []
 
+        # Publish the generated flipping plan data if not empty.
+        if publish_flipping_plan_data:
+            flipping_plan_data = model.get_flipping_plan_data(detections)
+            if len(flipping_plan_data) > 0:
+                print("Publishing flipping plan data")
+                cut_boxes.extend(flipping_plan_data)
+        
         # Publish the generated cutting path if not empty.
         if len(cut_path) > 0 and publish_cut_path:
             cut_boxes.extend(cut_path)
@@ -160,7 +167,7 @@ class Model:
             components_msg.data = "screws"
 
 
-        model.publish_cut_path(cut_boxes)
+        model.publish_path(cut_boxes)
         self.state_publisher.publish(components_msg)
 
     def remove_detections(self, detections, indicies_to_remove):
@@ -196,7 +203,8 @@ class Model:
             image_np = numpify(image_msg)
 
             image_np = cv2.cvtColor(image_np, cv2.COLOR_BGR2RGB)
-
+        
+        self.image = image_np
         # Run forward prop of model to get the detections.
         detections = self.detect_fn(image_np)
 
@@ -222,30 +230,48 @@ class Model:
 
         return image_np, detections
 
-    def get_class_detections(self, detections, class_name, min_score=0, get_scores=False, format=(
+    def get_class_detections(self, detections, class_name, min_score=0, best_only=False, get_scores=False, format=(
                     'x1', 'y1', 'w', 'h')):
         """
         Extract detections of a specific class from all the detections in the image.
         """
         boxes = []
         scores = []
+        best_box = None
+        max_score = 0
         for i, cid in enumerate(detections['detection_classes']):
             if cid == self.cname_to_cid[class_name]:
+                score = detections['detection_scores'][i]
+                if score < min_score or (score < max_score and best_only):
+                    continue
+                max_score = score
                 box = convert_format(detections['detection_boxes'][i], in_format=(
                     'y1', 'x1', 'y2', 'x2'), out_format=format)
                 box = [int(x) for x in box]
-                score = detections['detection_scores'][i]
-                if score >= min_score:
-                    boxes.append(box)
-                    if get_scores:
-                        scores.append(score)
+                best_box = box
+                boxes.append(box)
+                if get_scores:
+                    scores.append(score)
 
         if get_scores:
             return boxes, scores
+        elif best_only:
+            return best_box
         else:
             return boxes
         
-        
+    def get_flipping_plan_data(self, detections):
+        box_cname = 'Laptop_Back_Cover'
+        # Get detected laptop_covers.
+        best_cover_box = self.get_class_detections(detections=detections,
+                                                   class_name=box_cname,
+                                                   best_only=True)
+        x, y, w, h = best_cover_box[0], best_cover_box[1], best_cover_box[2], best_cover_box[3]
+        flip_point = (x + w // 2, y + h)
+        arc_center_point = (x + w // 2, y)
+        return [flip_point, arc_center_point]
+
+    
     def generate_cover_cutting_path(self,
                                     image,
                                     detections,
@@ -264,7 +290,6 @@ class Model:
         """
 
         image_np = np.copy(image)
-        self.image = image_np
 
         box_cname = 'Motherboard'
         # Get detected laptop_covers.
@@ -355,7 +380,7 @@ class Model:
         else:
             return cut_path, screw_boxes
 
-    def publish_cut_path(self, cut_path):
+    def publish_path(self, cut_path):
         # Publish Cutting Path.
         path_msg = Float32MultiArray()
         for x, y in cut_path:
@@ -373,9 +398,10 @@ if __name__ == "__main__":
 
     # Parameters that can be given from command-line / parameter-server.
     ns = '/components_detection'
-    publish_cut_path = rospy.get_param(     ns+'/publish_cut_path')
-    publish_screw_centers = rospy.get_param(ns+'/publish_screw_centers')
-    use_state = rospy.get_param(            ns+'/use_state')
+    publish_flipping_plan_data = rospy.get_param(ns+'/publish_flipping_plan_data', False)
+    publish_cut_path = rospy.get_param(ns+'/publish_cut_path', False)
+    publish_screw_centers = rospy.get_param(ns+'/publish_screw_centers', True)
+    use_state = rospy.get_param(ns+'/use_state', False)
 
     model = Model(model_path='/home/' + user + '/' + ws + '/src/perception/models/',
                   image_topic='/camera/color/image_raw',
@@ -389,7 +415,7 @@ if __name__ == "__main__":
         while not rospy.is_shutdown():
             # Recieve an image msg from camera topic, then, return image and detections.
             image, detections = model.recieve_and_detect(
-                read_img=True,
+                read_img=False,
                 image_path= images_path + str(img_num) + '.jpg')
 
             # Generate the cover cutting path, and screw holes from given detections and image to visulaisSe on.
@@ -400,7 +426,13 @@ if __name__ == "__main__":
                                                                     return_holes_inside_cut_path=False,
                                                                     filter_screws=False,
                                                                     avoid_screws_near_cpu=True)
-
+            # Publish the generated flipping plan data if not empty.
+            if publish_flipping_plan_data:
+                flipping_plan_data = model.get_flipping_plan_data(detections)
+                if len(flipping_plan_data) > 0:
+                    print("Publishing flipping plan data")
+                    model.publish_path(flipping_plan_data)
+                
             # Publish the generated cutting path if not empty.
             if len(screw_holes) > 0 and publish_screw_centers:
                 print("Publishing screw cut paths")
@@ -411,10 +443,11 @@ if __name__ == "__main__":
                     box_path = [(x, y), (x, y2), (x2, y2), (x2, y), (x, y)]
                     cut_boxes.extend(interpolate_path(box_path))
                 cut_boxes.extend(cut_path)
-                model.publish_cut_path(cut_boxes)
+                model.publish_path(cut_boxes)
+            
             # Publish the generated cutting path if not empty.
             if len(cut_path) > 0 and publish_cut_path:
-                model.publish_cut_path(cut_path)
+                model.publish_path(cut_path)
 
             print("Input Any Key to Continue")
             input()
