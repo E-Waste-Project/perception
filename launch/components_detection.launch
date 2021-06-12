@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <launch>
-    <arg name="publish_flipping_plan_data" default="False"/>
+    <arg name="publish_flipping_plan_data" default="True"/>
     <arg name="publish_cut_path" default="False" />
-    <arg name="publish_screw_centers" default="True" />
+    <arg name="publish_screw_centers" default="False" />
     <arg name="use_state" default="False" />
     <node pkg="perception" type="components_detection.py" name="components_detection" output='screen'>
         <param name="publish_flipping_plan_data" type="bool" value='$(arg publish_flipping_plan_data)'/>

@@ -8,7 +8,8 @@ from perception.models.experimental import attempt_load
 from perception.utils.datasets import letterbox
 from perception.utils.general import check_img_size, non_max_suppression, scale_coords, xyxy2xywh, set_logging
 from perception.utils.torch_utils import select_device, time_synchronized
-
+from perception.utils.plots import plot_one_box
+from numpy import random
 
 class Yolo:
 
@@ -37,7 +38,7 @@ class Yolo:
 
         print(f'Done. ({time.time() - t0:.3f}s)')
 
-    def detect(self, input_img, augment=False):
+    def detect(self, input_img, augment=False, draw=False):
         # Preprocess img
         # Padded resize
         img = letterbox(input_img, new_shape=self.imgsz)[0]
@@ -49,6 +50,8 @@ class Yolo:
         # Get names and colors
         names = self.model.module.names if hasattr(
             self.model, 'module') else self.model.names
+        #Get colors Youssef
+        colors = [[random.randint(0, 255) for _ in range(3)] for _ in names]
         img = torch.from_numpy(img).to(self.device)
         img = img.half() if self.half else img.float()  # uint8 to fp16/32
         img /= 255.0  # 0 - 255 to 0.0 - 1.0
@@ -90,14 +93,23 @@ class Yolo:
                     detection_boxes.append(box_yxyx)
                     detection_scores.append(conf)
                     detection_classes.append(cls)
+                    label = f'{names[int(cls)]} {conf:.2f}'
+                    if draw:
+                        plot_one_box(xyxy, im0, label=label, color=colors[int(cls)], line_thickness=3)
                 detections['detection_boxes'] = np.array(detection_boxes)
                 detections['detection_scores'] = np.array(detection_scores)
                 detections['detection_classes'] = np.array(detection_classes)
 
             # Print time (inference + NMS)
             print(f'{s}Done. ({t2 - t1:.3f}s)')
+            # if draw:
+            #     cv2.imshow('Captured Image', im0)
+            #     cv2.waitKey()
+            if draw:
+                return im0, detections
+            else:
+                return detections
 
-            return detections
 
 
 if __name__ == "__main__":

@@ -221,8 +221,6 @@ class Model:
 
         self.remove_detections(detections, indicies_to_remove)
 
-        print(image_np.shape)
-        print(detections['detection_boxes'][0])
         detections['detection_boxes'][:, 0] *= image_np.shape[0]
         detections['detection_boxes'][:, 2] *= image_np.shape[0]
         detections['detection_boxes'][:, 1] *= image_np.shape[1]
@@ -270,7 +268,13 @@ class Model:
         flip_point = (x + w // 2, y + h)
         arc_center_point = (x + w // 2, y)
         return [flip_point, arc_center_point]
-
+    
+    
+    def generate_ports_cutting_path(self, image, motherboard_box, ports_boxes):
+        image_np = np.copy(image)
+        
+    def generate_screws_cutting_path(self, image, detections, avoid_screws_near_cpu=False)
+        pass
     
     def generate_cover_cutting_path(self,
                                     image,
@@ -282,11 +286,9 @@ class Model:
                                     hole_tol=0,
                                     return_holes_inside_cut_path=False,
                                     filter_screws=False,
-                                    avoid_screws_near_cpu=False):
-        """Waits for an image msg from camera topic, then applies detection model
-        to get the detected classes, finally generate a cutting path and publish it.
-
-        param min_screw_score: a score threshold for detected screws confidence.
+                                    avoid_screws_near_cpu=False,
+                                    draw=True):
+        """Generate a cutting path and publish it.
         """
 
         image_np = np.copy(image)
@@ -312,7 +314,8 @@ class Model:
                     best_cover_box = box
 
             # Visualise detected laptop_cover/Motherboard
-            draw_boxes(image_np, [best_cover_box])
+            if draw:
+                draw_boxes(image_np, [best_cover_box])
         
         screw_boxes = self.get_class_detections(detections=detections,
                                                 class_name='Screw',
@@ -336,8 +339,9 @@ class Model:
                         2*hole_tol, sb[3] + 2*hole_tol] for sb in screw_boxes]
         
         # Visualise detected screws/ports/connectors.
-        draw_boxes(image_np, screw_boxes, draw_center=True)
-        draw_boxes(image_np, port_boxes)
+        if draw:
+            draw_boxes(image_np, screw_boxes, draw_center=True)
+            draw_boxes(image_np, port_boxes)
 
         if filter_screws:
             screw_boxes = filter_boxes_from_image(screw_boxes, self.image, "Choose Boxes, then press 'c'")
@@ -398,9 +402,9 @@ if __name__ == "__main__":
 
     # Parameters that can be given from command-line / parameter-server.
     ns = '/components_detection'
-    publish_flipping_plan_data = rospy.get_param(ns+'/publish_flipping_plan_data', False)
+    publish_flipping_plan_data = rospy.get_param(ns+'/publish_flipping_plan_data', True)
     publish_cut_path = rospy.get_param(ns+'/publish_cut_path', False)
-    publish_screw_centers = rospy.get_param(ns+'/publish_screw_centers', True)
+    publish_screw_centers = rospy.get_param(ns+'/publish_screw_centers', False)
     use_state = rospy.get_param(ns+'/use_state', False)
 
     model = Model(model_path='/home/' + user + '/' + ws + '/src/perception/models/',

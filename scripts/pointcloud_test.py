@@ -22,6 +22,8 @@ class Subscribers():
         self.cut_xyz_pub = rospy.Publisher("/cut_xyz", PoseArray, queue_size=1)
         self.screw_xyz_pub = rospy.Publisher("/screw_xyz", PoseArray, queue_size=1)
         self.grip_xyz_pub = rospy.Publisher("/grip_xyz", PoseArray, queue_size=1)
+        self.flip_xyz_pub = rospy.Publisher("/flip_xyz", PoseArray, queue_size=1)
+        self.competition_xyz_pub = rospy.Publisher("/competition_xyz", PoseArray, queue_size=1)
 
     def calculate_dist_3D(self, msg):
         aligned_depth_image = ros_numpy.numpify(msg) * 0.001
@@ -55,7 +57,7 @@ class Subscribers():
         self.x_list = []
         self.y_list = []
         for point_num in range(0, contour_indices[:, 0].shape[0]):
-            if abs(contour_xyz[2, point_num]-np.median(contour_xyz[2]))>0.1:
+            if (abs(contour_xyz[2, point_num]-np.median(contour_xyz[2]))>0.1) and contour_indices[:, 0].shape[0]>25:
                 continue
             pose = Pose()
             pose.position.x = contour_xyz[1, point_num]
@@ -77,6 +79,11 @@ class Subscribers():
             self.screw_xyz_pub.publish(pose_msg)
         elif received_msg.data == "Gripping":
             self.grip_xyz_pub.publish(pose_msg)
+        elif received_msg.data == "Flipping":
+            self.flip_xyz_pub.publish(pose_msg)
+        elif received_msg.data == "Competition":
+            rospy.sleep(2)
+            self.competition_xyz_pub.publish(pose_msg)
 
 
     def info_callback(self, msg):
