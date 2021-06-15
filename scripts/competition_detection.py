@@ -34,6 +34,7 @@ ws = 'ewaste_ws' if user == 'abdelrhman' else 'abb_ws'
 window_index = 0
 detection_index = 0
 red_button_pose = Pose()
+board_state = None
 # camera_group = MoveGroupCommander("camera_link")
 # transformer_listener = tf.TransformListener()
 
@@ -59,6 +60,30 @@ def spiral(X, Y, center):
     return spiral_result
 
 
+def generate_spiral(X, Y, ref_pose, ref_frame="capture_frame"):
+    x = y = 0
+    dx = 0
+    dy = -1
+    pose_array = PoseArray()
+    pose_array.header.frame_id = ref_frame
+    X_mm = int(X * 1000)
+    Y_mm = int(Y * 1000)
+    for i in range(max(X_mm, Y_mm)**2):
+        if (x-X_mm/2 < x <= x+X_mm/2) and (y-Y_mm/2 < y <= y+Y_mm/2):
+            pose = Pose()
+            pose.position.x = ref_pose.position.x + (x / 1000.0)
+            pose.position.y = ref_pose.position.y + (y / 1000.0)
+            pose.position.z = ref_pose.position.z
+            pose.orientation.x = ref_pose.orientation.x
+            pose.orientation.y = ref_pose.orientation.y
+            pose.orientation.z = ref_pose.orientation.z
+            pose.orientation.w = ref_pose.orientation.w
+            pose_array.poses.append(pose)
+        if x == y or (x < 0 and x == -y) or (x > 0 and x == 1-y):
+            dx, dy = -dy, dx
+        x, y = x+dx, y+dy
+    
+    return pose_array
 
 
 #yaw = z, pitch = Y , Roll = X
@@ -94,6 +119,7 @@ def get_battery_orientation(battery_center, task_board_center):
 def send_to_pct(pixels_msg):
     global pixel_to_cartesian_pub
     global operations_pub
+    global board_state
     pixel_to_cartesian_pub.publish(pixels_msg)
     rospy.sleep(1)
     operations_msg = String()
@@ -120,7 +146,7 @@ def capture_callback(msg):
         cv2.startWindowThread()
         cv2.namedWindow("Captured Image")
         cv2.imshow('Captured Image', image)
-        cv2.waitKey(7000)
+        cv2.waitKey(3000)
         cv2.destroyAllWindows()
         
                 #detect pixel values
@@ -198,11 +224,11 @@ def capture_callback(msg):
             detection_index = 1
             image, detections = model_detection.recieve_and_detect()
             
-            cv2.startWindowThread()
-            cv2.namedWindow("Captured Image")
-            cv2.imshow('Captured Image', image)
-            cv2.waitKey(7000)
-            cv2.destroyAllWindows()
+            # cv2.startWindowThread()
+            # cv2.namedWindow("Captured Image")
+            # cv2.imshow('Captured Image', image)
+            # cv2.waitKey(0)
+            # cv2.destroyAllWindows()
             
             blue_button_px = model_detection.get_class_detections(detections,'Blue_Button')
             red_button_px = model_detection.get_class_detections(detections,'Red_Button')
@@ -222,6 +248,17 @@ def capture_callback(msg):
             battery_cover_center = [round(0.5 * (battery_cover_px[0][0]+battery_cover_px[0][2])),round(0.5 * (battery_cover_px[0][1]+battery_cover_px[0][3]))]
             cover_pressure_point_center = [round(0.5 * (cover_pressure_point_px[0][0]+cover_pressure_point_px[0][2])),round(0.5 * (cover_pressure_point_px[0][1]+cover_pressure_point_px[0][3]))]
             ethernet_empty_center = [round(0.5 * (ethernet_empty_px[0][0]+ethernet_empty_px[0][2])),round(0.5 * (ethernet_empty_px[0][1]+ethernet_empty_px[0][3]))]
+            
+            cv2.circle(image, tuple(key_hole_center), 1, (0, 255, 0), thickness=1)
+            cv2.circle(image, tuple(key_center), 1, (0, 255, 0), thickness=1)
+            
+            print("SHOWWWWWW")
+            cv2.startWindowThread()
+            cv2.namedWindow("Captured Image")
+            cv2.imshow("Captured Image", image)
+            cv2.waitKey(3000)
+            cv2.destroyAllWindows()
+            print("DONEEEEEE")
             
             pixel_to_cartesian_msg = Float32MultiArray()
             pixel_to_cartesian_msg.data = [blue_button_center[1],blue_button_center[0],
@@ -243,11 +280,23 @@ def capture_callback(msg):
             battery_cover_pose = cartesian_msg.poses[5]
             cover_pressure_point_pose = cartesian_msg.poses[6]
             ethernet_empty_pose = cartesian_msg.poses[7]
+
+            if(key_hole_pose.position.y > blue_button_pose.position.y):
+                board_state = 'Not Flipped'
+            else:
+                board_state = 'Flipped'
+
+            board_state_msg = String()
+            board_state_msg.data = board_state
+
             
             #form ethernet PoseArray
             ethernet_poses = PoseArray()
             ethernet_poses.poses.append(ethernet_empty_pose)
             ethernet_poses.poses.append(ethernet_cable_pose)
+
+            # board_state_pub.publish(board_state_msg)
+            # success_msg = rospy.wait_for_message("/done",String)
             
             pb_pub.publish(blue_button_pose)
             success_msg = rospy.wait_for_message("/done",String)
@@ -255,6 +304,10 @@ def capture_callback(msg):
             # success_msg = rospy.wait_for_message("/done",String)
             key_pub.publish(key_pose)
             success_msg = rospy.wait_for_message("/done",String)
+            
+            key_hole_pub.publish(key_hole_pose)
+            success_msg = rospy.wait_for_message("/done",String)
+
             cover_pub.publish(cover_pressure_point_pose)
             success_msg = rospy.wait_for_message("/done",String)
             # pb_pub.publish(red_button_pose)
@@ -264,9 +317,9 @@ def capture_callback(msg):
         
         elif detection_index ==1:
             image, detections = model_detection.recieve_and_detect()
-            #cv2.imshow('Captured Image'+str(window_index), image)
-            #cv2.waitKey()
-            rospy.sleep(2)
+            # cv2.imshow('Captured Image'+str(window_index), image)
+            # cv2.waitKey()
+            # rospy.sleep(2)
             
             battery_hole_px = model_detection.get_class_detections(detections,'Battery_Hole', sort=True)
             battery_px = model_detection.get_class_detections(detections,'Battery', sort=True)
@@ -321,32 +374,41 @@ def capture_callback(msg):
             ethernet_cable_pose = cartesian_msg.poses[4]
             ethernet_empty_pose = cartesian_msg.poses[5] 
             
+            '''
+            Spiral old
+            '''
+            # #crop battery holes for spiral search
+            # battery_hole_cropped_0 = image[battery_hole_px[0][1]:battery_hole_px[0][3]+1,battery_hole_px[0][0]:battery_hole_px[0][2]+1]
+            # battery_hole_cropped_1 = image[battery_hole_px[1][1]:battery_hole_px[1][3]+1,battery_hole_px[1][0]:battery_hole_px[1][2]+1]
+            # ethernet_empty_cropped = image[ethernet_empty_px[0][1]:ethernet_empty_px[0][3]+1,ethernet_empty_px[0][0]:ethernet_empty_px[0][2]+1]
             
-            #crop battery holes for spiral search
-            battery_hole_cropped_0 = image[battery_hole_px[0][1]:battery_hole_px[0][3]+1,battery_hole_px[0][0]:battery_hole_px[0][2]+1]
-            battery_hole_cropped_1 = image[battery_hole_px[1][1]:battery_hole_px[1][3]+1,battery_hole_px[1][0]:battery_hole_px[1][2]+1]
-            ethernet_empty_cropped = image[ethernet_empty_px[0][1]:ethernet_empty_px[0][3]+1,ethernet_empty_px[0][0]:ethernet_empty_px[0][2]+1]
+            # #return indices of battery hole spiral search
+            # battery_hole_list_0 = spiral(battery_hole_cropped_0.shape[1], battery_hole_cropped_0.shape[0],battery_hole_center_0)
+            # battery_hole_list_1 = spiral(battery_hole_cropped_1.shape[1] // 2, battery_hole_cropped_1.shape[0],battery_hole_center_1)
+            # ethernet_empty_list = spiral(ethernet_empty_cropped.shape[1], ethernet_empty_cropped.shape[0],ethernet_empty_center)
             
-            #return indices of battery hole spiral search
-            battery_hole_list_0 = spiral(battery_hole_cropped_0.shape[1], battery_hole_cropped_0.shape[0],battery_hole_center_0)
-            battery_hole_list_1 = spiral(battery_hole_cropped_1.shape[1] // 2, battery_hole_cropped_1.shape[0],battery_hole_center_1)
-            ethernet_empty_list = spiral(ethernet_empty_cropped.shape[1], ethernet_empty_cropped.shape[0],ethernet_empty_center)
+            # # Convert pixels to poses
+            # pixel_to_cartesian_msg = Float32MultiArray()
+            # pixel_to_cartesian_msg.data = battery_hole_list_0
+            # cartesian_msg = send_to_pct(pixel_to_cartesian_msg)
+            # battery_hole_spiral_0 = cartesian_msg
             
-            # Convert pixels to poses
-            pixel_to_cartesian_msg = Float32MultiArray()
-            pixel_to_cartesian_msg.data = battery_hole_list_0
-            cartesian_msg = send_to_pct(pixel_to_cartesian_msg)
-            battery_hole_spiral_0 = cartesian_msg
+            # pixel_to_cartesian_msg = Float32MultiArray()
+            # pixel_to_cartesian_msg.data = battery_hole_list_1
+            # cartesian_msg = send_to_pct(pixel_to_cartesian_msg)
+            # battery_hole_spiral_1 = cartesian_msg
             
-            pixel_to_cartesian_msg = Float32MultiArray()
-            pixel_to_cartesian_msg.data = battery_hole_list_1
-            cartesian_msg = send_to_pct(pixel_to_cartesian_msg)
-            battery_hole_spiral_1 = cartesian_msg
+            # pixel_to_cartesian_msg = Float32MultiArray()
+            # pixel_to_cartesian_msg.data = ethernet_empty_list
+            # cartesian_msg = send_to_pct(pixel_to_cartesian_msg)
+            # ethernet_empty_spiral = cartesian_msg
             
-            pixel_to_cartesian_msg = Float32MultiArray()
-            pixel_to_cartesian_msg.data = ethernet_empty_list
-            cartesian_msg = send_to_pct(pixel_to_cartesian_msg)
-            ethernet_empty_spiral = cartesian_msg
+            '''
+            Spiral new
+            '''
+            battery_hole_spiral_0 = generate_spiral(0.04, 0.04, battery_hole_pose_0)
+            battery_hole_spiral_1 = generate_spiral(0.04, 0.04, battery_hole_pose_1)
+            ethernet_empty_spiral = generate_spiral(0.04, 0.04, ethernet_empty_pose)
             
             # Go Pick the right battery.
             right_battery_pub.publish(battery_right_pose)
@@ -538,7 +600,7 @@ class Model:
                 except rospy.ROSException:
                     components_msg = String()
                     components_msg.data = "Camera Disconnected"
-                    self.state_publisher.publish(components_msg)
+                    self.state_publisher.publStampedish(components_msg)
                     print("Camera Disconnected")
                     connection_msg = rospy.wait_for_message(
                         "/connection_error_handled", String)
@@ -621,9 +683,7 @@ if __name__ == "__main__":
     rospy.init_node("competition_detection")
     pixel_to_cartesian_pub = rospy.Publisher("/cutting_path", Float32MultiArray, queue_size=1)
     operations_pub = rospy.Publisher("/operation", String, queue_size=1)
-    desired_pose_pub = rospy.Publisher("/desired_pose", PoseStamped, queue_size=1)
-    pb_pub = rospy.Publisher("/pb_topic", Pose, queue_size=1)
-    cover_pub = rospy.Publisher("/cover_topic", Pose, queue_size=1)
+    desired_pose_pub = rospy.Publisher("/desired_pose_topic", PoseStamped, queue_size=1)
     left_battery_pub = rospy.Publisher("/left_battery_topic", Pose, queue_size=1)
     right_battery_pub = rospy.Publisher("/right_battery_topic", Pose, queue_size=1)
     battery_hole_spiral_pub = rospy.Publisher("/battery_hole_spiral_topic", PoseArray, queue_size=1)
@@ -631,6 +691,10 @@ if __name__ == "__main__":
     ethernet_pub = rospy.Publisher("/ethernet_topic", PoseArray, queue_size=1)
     ethernet_empty_spiral_pub = rospy.Publisher("/ethernet_empty_spiral_topic", PoseArray, queue_size=1)
     key_pub = rospy.Publisher("/key_topic", Pose, queue_size=1)
+    key_hole_pub = rospy.Publisher("/key_hole_topic", Pose, queue_size=1)
+    pb_pub = rospy.Publisher("/pb_topic", Pose, queue_size=1)
+    cover_pub = rospy.Publisher("/cover_topic", Pose, queue_size=1)
+    board_state_pub = rospy.Publisher("/board_state_topic", String, queue_size=1)
 
 
     sys.path.insert(
