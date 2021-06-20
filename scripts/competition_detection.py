@@ -155,7 +155,7 @@ def capture_callback(msg):
         cv2.waitKey(7000)
         cv2.destroyAllWindows()
         
-                #detect pixel values
+        #detect pixel values
         blue_button_px = model_orientation.get_class_detections(detections,'Blue_Button')
         key_hole_px = model_orientation.get_class_detections(detections,'Key_hole')
         task_board_px = model_orientation.get_class_detections(detections,'Task_board')
@@ -235,24 +235,24 @@ def capture_callback(msg):
             # cv2.waitKey(0)
             # cv2.destroyAllWindows()
             
-            blue_button_px = model_detection.get_class_detections(detections,'Blue_Button')
+            # blue_button_px = model_detection.get_class_detections(detections,'Blue_Button')
             red_button_px = model_detection.get_class_detections(detections,'Red_Button')
             ethernet_cable_px = model_detection.get_class_detections(detections,'Ethernet_Cable')
             # key_px = model_detection.get_class_detections(detections,'Key')
             key_hole_px = model_detection.get_class_detections(detections,'Key_hole')
             battery_cover_px = model_detection.get_class_detections(detections,'Battery_Cover')
             # cover_pressure_point_px = model_detection.get_class_detections(detections,'Cover_Pressure_Point')
-            ethernet_empty_px = model_detection.get_class_detections(detections,'Ethernet_Empty')
+            # ethernet_empty_px = model_detection.get_class_detections(detections,'Ethernet_Empty')
             
             
-            blue_button_center = [round(0.5 * (blue_button_px[0][0]+blue_button_px[0][2])),round(0.5 * (blue_button_px[0][1]+blue_button_px[0][3]))]
+            # blue_button_center = [round(0.5 * (blue_button_px[0][0]+blue_button_px[0][2])),round(0.5 * (blue_button_px[0][1]+blue_button_px[0][3]))]
             red_button_center = [round(0.5 * (red_button_px[0][0]+red_button_px[0][2])),round(0.5 * (red_button_px[0][1]+red_button_px[0][3]))]
             ethernet_cable_center = [round(0.5 * (ethernet_cable_px[0][0]+ethernet_cable_px[0][2])),round(0.5 * (ethernet_cable_px[0][1]+ethernet_cable_px[0][3]))]
             # key_center = [round(0.5 * (key_px[0][0]+key_px[0][2])),round(0.5 * (key_px[0][1]+key_px[0][3]))]
             key_hole_center = [round(0.5 * (key_hole_px[0][0]+key_hole_px[0][2])),round(0.5 * (key_hole_px[0][1]+key_hole_px[0][3]))]
             battery_cover_center = [round(0.5 * (battery_cover_px[0][0]+battery_cover_px[0][2])),round(0.5 * (battery_cover_px[0][1]+battery_cover_px[0][3]))]
             # cover_pressure_point_center = [round(0.5 * (cover_pressure_point_px[0][0]+cover_pressure_point_px[0][2])),round(0.5 * (cover_pressure_point_px[0][1]+cover_pressure_point_px[0][3]))]
-            ethernet_empty_center = [round(0.5 * (ethernet_empty_px[0][0]+ethernet_empty_px[0][2])),round(0.5 * (ethernet_empty_px[0][1]+ethernet_empty_px[0][3]))]
+            # ethernet_empty_center = [round(0.5 * (ethernet_empty_px[0][0]+ethernet_empty_px[0][2])),round(0.5 * (ethernet_empty_px[0][1]+ethernet_empty_px[0][3]))]
             
             cv2.circle(image, tuple(key_hole_center), 1, (0, 255, 0), thickness=1)
             # cv2.circle(image, tuple(key_center), 1, (0, 255, 0), thickness=1)
@@ -266,25 +266,33 @@ def capture_callback(msg):
             print("DONEEEEEE")
             
             pixel_to_cartesian_msg = Float32MultiArray()
-            pixel_to_cartesian_msg.data = [blue_button_center[1],blue_button_center[0],
+            pixel_to_cartesian_msg.data = [#blue_button_center[1],blue_button_center[0],
                                         red_button_center[1],red_button_center[0],
                                         ethernet_cable_center[1],ethernet_cable_center[0],
                                         # key_center[1],key_center[0],
                                         key_hole_center[1],key_hole_center[0],
                                         battery_cover_center[1],battery_cover_center[0],
                                         # cover_pressure_point_center[1],cover_pressure_point_center[0],
-                                        ethernet_empty_center[1],ethernet_empty_center[0]]
+                                        #ethernet_empty_center[1],ethernet_empty_center[0]
+                                        ]
             
             cartesian_msg = send_to_pct(pixel_to_cartesian_msg)
             
-            blue_button_pose = cartesian_msg.poses[0]
-            red_button_pose = cartesian_msg.poses[1]
-            ethernet_cable_pose = cartesian_msg.poses[2]
+            blue_button_pose = deepcopy(cartesian_msg.poses[0])
+            red_button_pose = cartesian_msg.poses[0]
+            comp_x = 0.017
+            comp_x = -comp_x if board_state == "Flipped" else comp_x
+            blue_button_pose.position.x += comp_x
+            ethernet_cable_pose = cartesian_msg.poses[1]
             # key_pose = cartesian_msg.poses[3]
-            key_hole_pose = cartesian_msg.poses[3]
-            battery_cover_pose = cartesian_msg.poses[4]
+            key_hole_pose = cartesian_msg.poses[2]
+            battery_cover_pose = cartesian_msg.poses[3]
             # cover_pressure_point_pose = cartesian_msg.poses[5]
-            ethernet_empty_pose = cartesian_msg.poses[5]
+            # ethernet_empty_pose = cartesian_msg.poses[4]
+            ethernet_empty_pose = deepcopy(key_hole_pose)
+            comp_x = 0.045
+            comp_x = -comp_x if board_state == "Flipped" else comp_x
+            ethernet_empty_pose.position.x += comp_x
             key_pose = deepcopy(key_hole_pose)
             cover_pressure_point_pose = deepcopy(battery_cover_pose)
             
@@ -414,7 +422,7 @@ def capture_callback(msg):
             
             # battery_hole_pose_1.position.x = c_x_1
             # battery_hole_pose_1.position.y = c_y_1
-            dx, dy, dx2 = -0.017, 0.022, 0
+            dx, dy, dx2 = -0.017, 0.023, 0
             if board_state == "Flipped":
                 dx, dy, dx2 = dx*-1, dy*-1, dx2*-1
                 
@@ -497,9 +505,6 @@ def capture_callback(msg):
             pb_pub.publish(red_button_pose)
             success_msg = rospy.wait_for_message("/done",String)
             
-            # Put the battery in the hole (without spiral search).
-            # battery_hole_pub.publish(battery_hole_pose_0)
-            # success_msg = rospy.wait_for_message("/done",String)
             return
                        
             
@@ -516,6 +521,8 @@ class Model:
                  imgsz=1280):
 
         self.model_type = model_type
+        thresh = 0.2
+
         if model_type == 'ssd':
 
             PATH_TO_MODEL_DIR = model_path + 'saved_model'
@@ -564,49 +571,49 @@ class Model:
                 'CD-ROM':            {'thresh': 0.5, 'id': 11},
                 'Laptop_Back_Cover': {'thresh': 0.92, 'id': 12}
             }
-
+            
         elif model_type == 'yolo_detection':
             PATH_TO_MODEL_DIR = model_path + 'Model_Weights3.pt'
-            self.detect_fn = Yolo(PATH_TO_MODEL_DIR, imgsz, 0.2).detect
+            self.detect_fn = Yolo(PATH_TO_MODEL_DIR, imgsz, thresh).detect
             # define class thresholds, ids, and names.
             self.class_thresh = {
-                'Blue_Button':          {'thresh': 0.4, 'id': 0},
-                'Red_Button':           {'thresh': 0.4, 'id': 1},
-                'Ethernet_Empty':       {'thresh': 0.4, 'id': 2},
-                'Ethernet_Cable':       {'thresh': 0.4, 'id': 3},
-                'Ethernet_Tip':         {'thresh': 0.4, 'id': 4},
-                'Key':                  {'thresh': 0.2, 'id': 5},
-                'Key_hole':             {'thresh': 0.4, 'id': 6},
-                'Microcontroller':      {'thresh': 0.4, 'id': 7},
-                'Battery_Cover':        {'thresh': 0.4, 'id': 8},
-                'Battery_Hole':         {'thresh': 0.4, 'id': 9},
-                'Task_board':           {'thresh': 0.4, 'id': 10},
-                'Cover_Pressure_Point': {'thresh': 0.4, 'id': 11},
-                'Battery':              {'thresh': 0.4, 'id': 12}
+                'Blue_Button':          {'thresh': thresh, 'id': 0},
+                'Red_Button':           {'thresh': thresh, 'id': 1},
+                'Ethernet_Empty':       {'thresh': thresh, 'id': 2},
+                'Ethernet_Cable':       {'thresh': thresh, 'id': 3},
+                'Ethernet_Tip':         {'thresh': thresh, 'id': 4},
+                'Key':                  {'thresh': thresh, 'id': 5},
+                'Key_hole':             {'thresh': thresh, 'id': 6},
+                'Microcontroller':      {'thresh': thresh, 'id': 7},
+                'Battery_Cover':        {'thresh': thresh, 'id': 8},
+                'Battery_Hole':         {'thresh': thresh, 'id': 9},
+                'Task_board':           {'thresh': thresh, 'id': 10},
+                'Cover_Pressure_Point': {'thresh': thresh, 'id': 11},
+                'Battery':              {'thresh': thresh, 'id': 12}
             }
         
         elif model_type == 'yolo_orientation':
             PATH_TO_MODEL_DIR = model_path + 'Model2_Weights2.pt'
-            self.detect_fn = Yolo(PATH_TO_MODEL_DIR, imgsz, 0.2).detect
+            self.detect_fn = Yolo(PATH_TO_MODEL_DIR, imgsz, thresh).detect
             # define class thresholds, ids, and names.
             self.class_thresh = {
-                'Blue_Button':          {'thresh': 0.4, 'id': 0},
-                'Red_Button':           {'thresh': 0.4, 'id': 1},
-                'Ethernet_Empty':       {'thresh': 0.4, 'id': 2},
-                'Ethernet_Cable':       {'thresh': 0.4, 'id': 3},
-                'Ethernet_Tip':         {'thresh': 0.4, 'id': 4},
-                'Key':                  {'thresh': 0.2, 'id': 5},
-                'Key_hole':             {'thresh': 0.4, 'id': 6},
-                'Microcontroller':      {'thresh': 0.4, 'id': 7},
-                'Battery_Cover':        {'thresh': 0.4, 'id': 8},
-                'Left_Battery':         {'thresh': 0.4, 'id': 9},
-                'Battery_Tip':          {'thresh': 0.4, 'id': 10},
-                'Battery_Hole':         {'thresh': 0.4, 'id': 11},
-                'Task_board':           {'thresh': 0.4, 'id': 12},
-                'Cover_Pressure_Point': {'thresh': 0.4, 'id': 13},
-                'Key_Pickup_Empty':     {'thresh': 0.4, 'id': 14},
-                'Ethernet_Top_Empty':   {'thresh': 0.4, 'id': 15},
-                'Right_Battery':        {'thresh': 0.4, 'id': 16}
+                'Blue_Button':          {'thresh': thresh, 'id': 0},
+                'Red_Button':           {'thresh': thresh, 'id': 1},
+                'Ethernet_Empty':       {'thresh': thresh, 'id': 2},
+                'Ethernet_Cable':       {'thresh': thresh, 'id': 3},
+                'Ethernet_Tip':         {'thresh': thresh, 'id': 4},
+                'Key':                  {'thresh': thresh, 'id': 5},
+                'Key_hole':             {'thresh': thresh, 'id': 6},
+                'Microcontroller':      {'thresh': thresh, 'id': 7},
+                'Battery_Cover':        {'thresh': thresh, 'id': 8},
+                'Left_Battery':         {'thresh': thresh, 'id': 9},
+                'Battery_Tip':          {'thresh': thresh, 'id': 10},
+                'Battery_Hole':         {'thresh': thresh, 'id': 11},
+                'Task_board':           {'thresh': thresh, 'id': 12},
+                'Cover_Pressure_Point': {'thresh': thresh, 'id': 13},
+                'Key_Pickup_Empty':     {'thresh': thresh, 'id': 14},
+                'Ethernet_Top_Empty':   {'thresh': thresh, 'id': 15},
+                'Right_Battery':        {'thresh': thresh, 'id': 16}
             }
 
         self.image_topic = image_topic
@@ -692,7 +699,7 @@ class Model:
         return im0, detections
 
     def get_class_detections(self, detections, class_name, min_score=0, best_only=False, get_scores=False, format=(
-            'x1', 'y1', 'x2', 'y2'), sort=False):
+            'x1', 'y1', 'x2', 'y2'), sort=True):
         """
         Extract detections of a specific class from all the detections in the image.
         """
@@ -711,6 +718,7 @@ class Model:
                 box = [int(x) for x in box]
                 best_box = box
                 boxes.append(box)
+                print("{} box added".format(class_name))
                 scores.append(score)
         if sort:
             enumerated_boxes = sorted(list(enumerate(boxes)), key=lambda i: scores[i[0]], reverse=True)
