@@ -111,6 +111,7 @@ class Model:
         self.image_topic = image_topic
         self.image = None
         self.imgsz = imgsz
+        self.screws_near_cpu = None
 
         # dictionary to convert class id to class name
         self.cid_to_cname = {
@@ -152,6 +153,9 @@ class Model:
         # Generate the screws cut paths
         screws_cut_path = self.generate_screws_cutting_path(screw_holes, interpolate=False)
         
+         # Generate the screws_near_cpu cut paths
+        screws_near_cpu_cut_path = self.generate_screws_cutting_path(self.screws_near_cpu, interpolate=False)
+        
         # Construct perception_data msg.
         data_msg = PerceptionData()
         data_msg.cover_cut_path = self.construct_float_multi_array(cut_path)
@@ -163,9 +167,17 @@ class Model:
         [screw_boxes.extend([(sb[0], sb[1]), (sb[2], sb[3])]) for sb in screw_holes]
         data_msg.screws = self.construct_float_multi_array(screw_boxes)
         
+        screw_boxes = []
+        [screw_boxes.extend([(sb[0], sb[1]), (sb[2], sb[3])]) for sb in self.screws_near_cpu]
+        data_msg.screws_near_cpu = self.construct_float_multi_array(screw_boxes)
+        
         for i in range(len(screws_cut_path)):
             path_msg = self.construct_float_multi_array(screws_cut_path[i])
             data_msg.screws_cut_path.append(path_msg)
+        
+        for i in range(len(screws_near_cpu_cut_path)):
+            path_msg = self.construct_float_multi_array(screws_near_cpu_cut_path[i])
+            data_msg.screws_near_cpu_cut_path.append(path_msg)
         
         # Publish Perception Data
         self.perception_data_publisher.publish(data_msg)
@@ -410,10 +422,11 @@ class Model:
         
         if avoid_screws_near_cpu:
             cpu_boxes = self.get_class_detections(detections=detections,
-                                                class_name='CPU',
-                                                min_score=0)
+                                                class_name='CPU')
 
-            screw_boxes = filter(lambda box: not box_near_by_dist(box, cpu_boxes, min_hole_dist), screw_boxes)
+            self.screws_near_cpu = list(filter(lambda box: box_near_by_dist(box, cpu_boxes, min_hole_dist), screw_boxes))
+            
+            screw_boxes = [box for box in screw_boxes if box not in self.screws_near_cpu]
 
 
         screw_boxes = [[sb[0] - hole_tol, sb[1] - hole_tol, sb[2] +
