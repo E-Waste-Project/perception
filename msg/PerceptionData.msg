@@ -1,8 +1,9 @@
 std_msgs/Float32MultiArray screws
-std_msgs/Float32MultiArray labtop_back_cover
+std_msgs/Float32MultiArray back_cover_cut_path
 std_msgs/Float32MultiArray motherboard
 std_msgs/Float32MultiArray fan
 std_msgs/Float32MultiArray cpu
-std_msgs/Float32MultiArray cover_cut_path
+std_msgs/Float32MultiArray keyboard
+std_msgs/Float32MultiArray front_cover_cut_path
 std_msgs/Float32MultiArray[] ports_cut_path
 std_msgs/Float32MultiArray[] screws_cut_path

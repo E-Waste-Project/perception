@@ -119,13 +119,21 @@ def point_near_box_by_dist(point, box, dist):
             return False
 
 def box_near_by_dist(box1, boxes, dist):
+    """Checks if box1 is near any of the boxes by dist,
+    if it is near any one of them, it returns True,
+    else if it is not near any one of them, it returns False.
+    """
     x1, y1, w, h = box1[0], box1[1], box1[2], box1[3]
     x2, y2 = x1 + w, y1 + h
     points = [(x1, y1), (x1, y2), (x2, y2), (x2, y1)]
-    near = False if len(boxes) < 1 else True
+    near = False
     for box in boxes:
         for point in points:
-            near = near and point_near_box_by_dist(point, box, dist) 
+            near = point_near_box_by_dist(point, box, dist)
+            if near:
+                break
+        if near:
+            break
     return near
 
 

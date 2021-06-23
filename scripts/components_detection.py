@@ -171,6 +171,7 @@ class Model:
         self.perception_data_publisher.publish(data_msg)
         
         components_msg = String()
+        components_msg.data = 'components'
         cut_boxes = []
 
         # Publish the generated flipping plan data if not empty.
