@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 from bisect import bisect_right, bisect_left
 from copy import deepcopy
+from perception.coco_datasets import convert_format
 
 
 class Rect:
@@ -105,6 +106,10 @@ def draw_boxes(image, boxes, color=(0, 255, 0), thickness=2, draw_center=False):
             cv2.circle(
                 image, (box[0] + box[2] // 2, box[1] + box[3] // 2), 1, color, thickness)
 
+def box_to_center(box, in_format=('x1', 'y1', 'w', 'h')):
+    converted_box = convert_format(deepcopy(box), in_format=in_format, out_format=('x1', 'y1', 'w', 'h'))
+    center = (converted_box[0] + converted_box[2] // 2, converted_box[1] + converted_box[3] // 2)
+    return center
 
 def point_near_box_by_dist(point, box, dist):
         x, y = point[0], point[1]

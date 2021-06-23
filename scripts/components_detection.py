@@ -4,7 +4,7 @@ from perception.yolo_detector import Yolo
 from perception.coco_datasets import convert_format
 from perception.laptop_perception_helpers import plan_cover_cutting_path, interpolate_path,\
                                                  plan_port_cutting_path, filter_boxes_from_image,\
-                                                     draw_lines, draw_boxes, box_near_by_dist
+                                                     draw_lines, draw_boxes, box_near_by_dist, box_to_center
 from perception.msg import PerceptionData
 import sys
 import rospy
@@ -153,32 +153,53 @@ class Model:
         # Generate the screws cut paths
         screws_cut_path = self.generate_screws_cutting_path(screw_holes, interpolate=False)
         
-         # Generate the screws_near_cpu cut paths
+        # Generate the screws_near_cpu cut paths
         screws_near_cpu_cut_path = self.generate_screws_cutting_path(self.screws_near_cpu, interpolate=False)
         
         # Construct perception_data msg.
         data_msg = PerceptionData()
-        data_msg.cover_cut_path = self.construct_float_multi_array(cut_path)
+        
+        # Add back cover cut path
+        data_msg.back_cover_cut_path = self.construct_float_multi_array(cut_path)
         for i in range(len(ports_cut_path)):
             path_msg = self.construct_float_multi_array(ports_cut_path[i])
             data_msg.ports_cut_path.append(path_msg)
-            
+        
+        # Add screws    
         screw_boxes = []
         [screw_boxes.extend([(sb[0], sb[1]), (sb[2], sb[3])]) for sb in screw_holes]
         data_msg.screws = self.construct_float_multi_array(screw_boxes)
         
-        screw_boxes = []
-        [screw_boxes.extend([(sb[0], sb[1]), (sb[2], sb[3])]) for sb in self.screws_near_cpu]
-        data_msg.screws_near_cpu = self.construct_float_multi_array(screw_boxes)
+        # Add cpu screws
+        cpu_screw_boxes = []
+        [cpu_screw_boxes.extend([(sb[0], sb[1]), (sb[2], sb[3])]) for sb in self.screws_near_cpu]
+        data_msg.screws_near_cpu = self.construct_float_multi_array(cpu_screw_boxes)
         
+        # Add screws cut path
         for i in range(len(screws_cut_path)):
             path_msg = self.construct_float_multi_array(screws_cut_path[i])
             data_msg.screws_cut_path.append(path_msg)
         
+        # Add cpu screws cut path
         for i in range(len(screws_near_cpu_cut_path)):
             path_msg = self.construct_float_multi_array(screws_near_cpu_cut_path[i])
             data_msg.screws_near_cpu_cut_path.append(path_msg)
         
+        # Add detected CD-ROM.
+        data_msg.cd_rom = self.get_detection_as_msg(class_name="CD-ROM", best_only=True)
+        
+        # Add detected Hard Disk.
+        data_msg.hard_disk = self.get_detection_as_msg(class_name="Hard Disk", best_only=True)
+        
+        # Add detected Fan.
+        data_msg.fan = self.get_detection_as_msg(class_name="Fan", best_only=True)
+        
+        # Add detected CPUs.
+        data_msg.cpu = self.get_detection_as_msg(class_name="CPU", best_only=False)
+        
+        # Add detected motherboard.
+        data_msg.motherboard = self.get_detection_as_msg(class_name="Motherboard", best_only=True)
+
         # Publish Perception Data
         self.perception_data_publisher.publish(data_msg)
         
@@ -208,9 +229,16 @@ class Model:
                 cut_boxes.extend(interpolate_path(box_path))
             components_msg.data = "screws"
 
-
-        model.publish_path(cut_boxes)
+        if len(cut_boxes) >= 1:
+            self.publish_path(cut_boxes)
         self.state_publisher.publish(components_msg)
+    
+    def get_detection_as_msg(self, class_name, best_only=False, preprocessor=None):
+        preprocessor = box_to_center if preprocessor is None else preprocessor
+        cpu_boxes = self.get_class_detections(detections=detections, class_name=class_name)
+        boxes = boxes[0] if best_only else boxes
+        processed_boxes = [preprocessor(box) for box in boxes]
+        return self.construct_float_multi_array(processed_boxes)
 
     def remove_detections(self, detections, indicies_to_remove):
         detections['detection_boxes'] = np.delete(
