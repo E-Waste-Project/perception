@@ -105,13 +105,17 @@ class Model:
                 'HD_Bay':            {'thresh': 0.5, 'id': 14},
                 'CD_Bay':            {'thresh': 0.5, 'id': 15},
                 'Battery_Bay':       {'thresh': 0.5, 'id': 16},
-                'SD_Slot':           {'thresh': 0.5, 'id': 17}
+                'SD_Slot':           {'thresh': 0.5, 'id': 17},
+                'front_cover':       {'thresh': 0.5, 'id': 18},
+                'mouse_pad':         {'thresh': 0.5, 'id': 19},
+                'keyboard_bay':      {'thresh': 0.5, 'id': 20},
+                'keyboard':          {'thresh': 0.5, 'id': 21}
             }
 
         self.image_topic = image_topic
         self.image = None
         self.imgsz = imgsz
-        self.screws_near_cpu = None
+        self.screws_near_cpu = []
 
         # dictionary to convert class id to class name
         self.cid_to_cname = {
@@ -140,7 +144,7 @@ class Model:
         image, detections = self.recieve_and_detect()
 
         # Generate the cover cutting path, and screw holes from given detections and image to visulaise on.
-        cut_path, screw_holes = self.generate_cover_cutting_path(image, detections,
+        back_cover_cut_path, screw_holes = self.generate_cover_cutting_path(image, detections,
                                                                   min_screw_score=0,
                                                                   tol=20, method=1, min_hole_dist=10, hole_tol=0,  # generated path params
                                                                   return_holes_inside_cut_path=False,
@@ -151,16 +155,16 @@ class Model:
         ports_cut_path = self.generate_ports_cutting_path(image, detections, draw=True)
 
         # Generate the screws cut paths
-        screws_cut_path = self.generate_screws_cutting_path(screw_holes, interpolate=False)
+        screws_cut_path = self.generate_rectangular_cutting_path(screw_holes, interpolate=False)
         
         # Generate the screws_near_cpu cut paths
-        screws_near_cpu_cut_path = self.generate_screws_cutting_path(self.screws_near_cpu, interpolate=False)
+        screws_near_cpu_cut_path = self.generate_rectangular_cutting_path(self.screws_near_cpu, interpolate=False)
         
         # Construct perception_data msg.
         data_msg = PerceptionData()
         
         # Add back cover cut path
-        data_msg.back_cover_cut_path = self.construct_float_multi_array(cut_path)
+        data_msg.back_cover_cut_path = self.construct_float_multi_array(back_cover_cut_path)
         for i in range(len(ports_cut_path)):
             path_msg = self.construct_float_multi_array(ports_cut_path[i])
             data_msg.ports_cut_path.append(path_msg)
@@ -186,22 +190,21 @@ class Model:
             data_msg.screws_near_cpu_cut_path.append(path_msg)
         
         # Add detected CD-ROM.
-        data_msg.cd_rom = self.get_detection_as_msg(class_name="CD-ROM", best_only=True)
+        data_msg.cd_rom = self.get_detection_as_msg(detections=detections, class_name="CD-ROM", best_only=True)
         
         # Add detected Hard Disk.
-        data_msg.hard_disk = self.get_detection_as_msg(class_name="Hard Disk", best_only=True)
+        data_msg.hard_disk = self.get_detection_as_msg(detections=detections, class_name="Hard Disk", best_only=True)
         
         # Add detected Fan.
-        data_msg.fan = self.get_detection_as_msg(class_name="Fan", best_only=True)
+        data_msg.fan = self.get_detection_as_msg(detections=detections, class_name="Fan", best_only=True)
         
         # Add detected CPUs.
-        data_msg.cpu = self.get_detection_as_msg(class_name="CPU", best_only=False)
+        data_msg.cpu = self.get_detection_as_msg(detections=detections, class_name="CPU", best_only=False)
         
         # Add detected motherboard.
-        data_msg.motherboard = self.get_detection_as_msg(class_name="Motherboard", best_only=True)
+        data_msg.motherboard = self.get_detection_as_msg(detections=detections, class_name="Motherboard", best_only=True)
 
-        # Publish Perception Data
-        self.perception_data_publisher.publish(data_msg)
+        
         
         components_msg = String()
         components_msg.data = 'components'
@@ -215,8 +218,8 @@ class Model:
                 cut_boxes.extend(flipping_plan_data)
         
         # Publish the generated cutting path if not empty.
-        if len(cut_path) > 0 and publish_cut_path:
-            cut_boxes.extend(cut_path)
+        if len(back_cover_cut_path) > 0 and publish_cut_path:
+            cut_boxes.extend(back_cover_cut_path)
             components_msg.data = "cover"
 
         # Publish the generated cutting path if not empty.
@@ -232,12 +235,19 @@ class Model:
         if len(cut_boxes) >= 1:
             self.publish_path(cut_boxes)
         self.state_publisher.publish(components_msg)
+        
+        rospy.sleep(1)
+        
+        # Publish Perception Data
+        self.perception_data_publisher.publish(data_msg)
     
-    def get_detection_as_msg(self, class_name, best_only=False, preprocessor=None):
+    def get_detection_as_msg(self, detections, class_name, best_only=False, preprocessor=None):
         preprocessor = box_to_center if preprocessor is None else preprocessor
-        cpu_boxes = self.get_class_detections(detections=detections, class_name=class_name)
-        boxes = boxes[0] if best_only else boxes
-        processed_boxes = [preprocessor(box) for box in boxes]
+        boxes = self.get_class_detections(detections=detections, class_name=class_name)
+        processed_boxes = []
+        if len(boxes) > 0:
+            boxes = boxes[0] if best_only else boxes
+            processed_boxes = [preprocessor(box) for box in boxes]
         return self.construct_float_multi_array(processed_boxes)
 
     def remove_detections(self, detections, indicies_to_remove):
@@ -305,7 +315,7 @@ class Model:
         """
         boxes = []
         scores = []
-        best_box = None
+        best_box = []
         max_score = 0
         for i, cid in enumerate(detections['detection_classes']):
             if cid == self.cname_to_cid[class_name]:
@@ -342,13 +352,13 @@ class Model:
         arc_center_point = (x + w // 2, y)
         return [flip_point, arc_center_point]
     
-    def generate_screws_cutting_path(self, screw_boxes, interpolate=False, npoints=20):
+    def generate_rectangular_cutting_path(self, screw_boxes, interpolate=False, npoints=20):
         cut_boxes = []
         for sh in screw_boxes:
             x, y, x2, y2 = sh[0], sh[1], sh[0] + sh[2], sh[1] + sh[3]
             box_path = [(x, y), (x, y2), (x2, y2), (x2, y), (x, y)]
             box_path = interpolate_path(box_path, npoints=npoints) if interpolate else box_path
-            cut_boxes.extend(box_path)
+            cut_boxes.append(box_path)
         return cut_boxes
     
     
@@ -556,7 +566,7 @@ if __name__ == "__main__":
             if len(screw_holes) > 0 and publish_screw_centers:
                 print("Publishing screw cut paths")
                 # screw_centers = [(sh[0] + (sh[2] // 2), sh[1] + (sh[3] // 2)) for sh in screw_holes]
-                cut_boxes = model.generate_screws_cutting_path(screw_holes, interpolate=False)
+                cut_boxes = model.generate_rectangular_cutting_path(screw_holes, interpolate=False)
                 model.publish_path(cut_boxes)
             
             # Publish the generated cutting path if not empty.

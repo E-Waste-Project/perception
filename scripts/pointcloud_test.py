@@ -19,11 +19,12 @@ class Subscribers():
             "/camera/aligned_depth_to_color/camera_info", CameraInfo, self.info_callback)
         rospy.Subscriber("/cutting_path", Float32MultiArray,
                          self.cutting_callback)
-        self.cut_xyz_pub = rospy.Publisher("/cut_xyz", PoseArray, queue_size=1)
-        self.screw_xyz_pub = rospy.Publisher("/screw_xyz", PoseArray, queue_size=1)
-        self.grip_xyz_pub = rospy.Publisher("/grip_xyz", PoseArray, queue_size=1)
-        self.flip_xyz_pub = rospy.Publisher("/flip_xyz", PoseArray, queue_size=1)
-        self.competition_xyz_pub = rospy.Publisher("/competition_xyz", PoseArray, queue_size=1)
+        # self.cut_xyz_pub = rospy.Publisher("/cut_xyz", PoseArray, queue_size=1)
+        # self.screw_xyz_pub = rospy.Publisher("/screw_xyz", PoseArray, queue_size=1)
+        # self.grip_xyz_pub = rospy.Publisher("/grip_xyz", PoseArray, queue_size=1)
+        # self.flip_xyz_pub = rospy.Publisher("/flip_xyz", PoseArray, queue_size=1)
+        # self.competition_xyz_pub = rospy.Publisher("/competition_xyz", PoseArray, queue_size=1)
+        self.px_to_xyz_pub = rospy.Publisher("/px_to_xyz", PoseArray, queue_size=1)
 
     def calculate_dist_3D(self, msg):
         aligned_depth_image = ros_numpy.numpify(msg) * 0.001
@@ -53,7 +54,7 @@ class Subscribers():
         pose_msg.header.stamp = rospy.Time.now()
         pose_msg.poses = []
         print(contour_xyz.shape)
-        print(contour_xyz)
+        # print(contour_xyz)
         self.x_list = []
         self.y_list = []
         for point_num in range(0, contour_indices[:, 0].shape[0]):
@@ -72,18 +73,20 @@ class Subscribers():
             pose_msg.poses.append(pose)
         # plt.plot(self.x_list,self.y_list)
         # plt.show(block=False)
-        received_msg = rospy.wait_for_message("/operation",String)
-        if received_msg.data == "Cutting":
-            self.cut_xyz_pub.publish(pose_msg)
-        elif received_msg.data == "Screw Loosening":
-            self.screw_xyz_pub.publish(pose_msg)
-        elif received_msg.data == "Gripping":
-            self.grip_xyz_pub.publish(pose_msg)
-        elif received_msg.data == "Flipping":
-            self.flip_xyz_pub.publish(pose_msg)
-        elif received_msg.data == "Competition":
-            rospy.sleep(2)
-            self.competition_xyz_pub.publish(pose_msg)
+        
+        # received_msg = rospy.wait_for_message("/operation",String)
+        # if received_msg.data == "Cutting":
+        #     self.cut_xyz_pub.publish(pose_msg)
+        # elif received_msg.data == "Screw Loosening":
+        #     self.screw_xyz_pub.publish(pose_msg)
+        # elif received_msg.data == "Gripping":
+        #     self.grip_xyz_pub.publish(pose_msg)
+        # elif received_msg.data == "Flipping":
+        #     self.flip_xyz_pub.publish(pose_msg)
+        # elif received_msg.data == "Competition":
+        #     rospy.sleep(2)
+        #     self.competition_xyz_pub.publish(pose_msg)
+        self.px_to_xyz_pub.publish(pose_msg)
 
 
     def info_callback(self, msg):

@@ -5,9 +5,11 @@ std_msgs/Float32MultiArray motherboard
 std_msgs/Float32MultiArray fan
 std_msgs/Float32MultiArray cpu
 std_msgs/Float32MultiArray keyboard
+std_msgs/Float32MultiArray keyboard_cut_path
 std_msgs/Float32MultiArray front_cover_cut_path
 std_msgs/Float32MultiArray cd_rom
 std_msgs/Float32MultiArray hard_disk
+std_msgs/Float32MultiArray flipping_points
 std_msgs/Float32MultiArray[] ports_cut_path
 std_msgs/Float32MultiArray[] screws_cut_path
 std_msgs/Float32MultiArray[] screws_near_cpu_cut_path
