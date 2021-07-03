@@ -3,6 +3,7 @@ import numpy as np
 from bisect import bisect_right, bisect_left
 from copy import deepcopy
 from perception.coco_datasets import convert_format
+from math import fabs
 
 
 class Rect:
@@ -111,19 +112,17 @@ def box_to_center(box, in_format=('x1', 'y1', 'w', 'h')):
     center = (converted_box[0] + converted_box[2] // 2, converted_box[1] + converted_box[3] // 2)
     return center
 
-def point_near_box_by_dist(point, box, dist):
+def point_near_box_by_dist(point, box, dist_as_side_ratio=0.5):
         x, y = point[0], point[1]
         x1, y1, w1, h1 = box[0], box[1], box[2], box[3]
         x2, y2 = x1 + w1, y1 + h1
-        if (abs(x1 - x) <= dist and abs(y1 - y) <= dist) \
-        or (abs(x1 - x) <= dist and abs(y2 - y) <= dist) \
-        or (abs(x2 - x) <= dist and abs(y2 - y) <= dist) \
-        or (abs(x2 - x) <= dist and abs(y1 - y) <= dist):
+        xc, yc = x1 + w1 // 2, y1 + w1 // 2
+        if fabs(xc - x) <= w1*dist_as_side_ratio and fabs(yc - y) <= h1*dist_as_side_ratio:
             return True
         else:
             return False
 
-def box_near_by_dist(box1, boxes, dist):
+def box_near_by_dist(box1, boxes, dist_as_side_ratio=0.5):
     """Checks if box1 is near any of the boxes by dist,
     if it is near any one of them, it returns True,
     else if it is not near any one of them, it returns False.
@@ -131,12 +130,10 @@ def box_near_by_dist(box1, boxes, dist):
     x1, y1, w, h = box1[0], box1[1], box1[2], box1[3]
     x2, y2 = x1 + w, y1 + h
     points = [(x1, y1), (x1, y2), (x2, y2), (x2, y1)]
+    center_point = x1 + w // 2, y1 + h // 2
     near = False
     for box in boxes:
-        for point in points:
-            near = point_near_box_by_dist(point, box, dist)
-            if near:
-                break
+        near = point_near_box_by_dist(center_point, box, dist_as_side_ratio)
         if near:
             break
     return near
@@ -796,6 +793,28 @@ def adjust_hole_center(image, hole_boxes):
             cv2.waitKey(0)
     return new_hole_centers
 
+
+#receives RGB image and a list of [x,y,w,h] lists
+def correct_circles(img,circles_list):
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    new_circles_list = []
+    for circle_old in circles_list:
+        
+        cropped_img = gray[circle_old[1] : circle_old[1]+circle_old[3]+1 ,
+                           circle_old[0] : circle_old[0]+circle_old[2]+1]
+        
+        circle_new = cv2.HoughCircles(cropped_img, cv2.HOUGH_GRADIENT, 1.2, 100)
+        old_center = [circle_old[2]//2 , circle_old[3]//2]
+        center_difference = [circle_new[0][0] - old_center[0],
+                             circle_new[0][1] - old_center[1]]
+        
+        new_circles_list.append([center_difference[0] + circle_old[0],     #New X
+                                 center_difference[1] + circle_old[1],     #New Y
+                                 circle_old[2],                        #Same W
+                                 circle_old[3]])                       #Same H
+        
+        return new_circles_list
+    
 
 if __name__ == "__main__":
 

@@ -4,7 +4,7 @@ from perception.yolo_detector import Yolo
 from perception.coco_datasets import convert_format
 from perception.laptop_perception_helpers import plan_cover_cutting_path, interpolate_path,\
                                                  plan_port_cutting_path, filter_boxes_from_image,\
-                                                     draw_lines, draw_boxes, box_near_by_dist, box_to_center
+                                                     draw_lines, draw_boxes, box_near_by_dist, box_to_center, correct_circles
 from perception.msg import PerceptionData
 import sys
 import rospy
@@ -143,16 +143,32 @@ class Model:
         # Recieve an image msg from camera topic, then, return image and detections.
         image, detections = self.recieve_and_detect()
 
+        draw = True
+        
         # Generate the cover cutting path, and screw holes from given detections and image to visulaise on.
         back_cover_cut_path, screw_holes = self.generate_cover_cutting_path(image, detections,
                                                                   min_screw_score=0,
                                                                   tol=20, method=1, min_hole_dist=10, hole_tol=0,  # generated path params
                                                                   return_holes_inside_cut_path=False,
                                                                   filter_screws=False,
-                                                                  avoid_screws_near_cpu=False)
+                                                                  draw=draw)
         
-        # Generate the cover cutting path, and screw holes from given detections and image to visulaisSe on.
-        ports_cut_path = self.generate_ports_cutting_path(image, detections, draw=True)
+        # Filter screws near the cpu and add them to self.screws_near_cpu
+        screw_holes = self.filter_screws_near_cpu(screw_holes, detections, dist_as_side_ratio=0.5, draw=draw, image=image)
+        
+        # Adjust screw centers
+        screw_holes = correct_circles(image, screw_holes)
+        
+        # Generate the cover cutting path, and screw holes from given detections and image to visulaise on.
+        ports_cut_path = self.generate_ports_cutting_path(image, detections, draw=draw)
+        
+        if draw:
+            cv2.imshow("image_window", image)
+            key = cv2.waitKey(0) & 0xFF
+            cv2.destroyWindow("image_window")
+
+        if key == ord('e'):
+            return
 
         # Generate the screws cut paths
         screws_cut_path = self.generate_rectangular_cutting_path(screw_holes, interpolate=False)
@@ -169,9 +185,8 @@ class Model:
             path_msg = self.construct_float_multi_array(ports_cut_path[i])
             data_msg.ports_cut_path.append(path_msg)
         
-        # Add screws    
-        screw_boxes = []
-        [screw_boxes.extend([(sb[0], sb[1]), (sb[2], sb[3])]) for sb in screw_holes]
+        # Add screws centers.
+        screw_boxes = [box_to_center(sb) for sb in screw_holes]
         data_msg.screws = self.construct_float_multi_array(screw_boxes)
         
         # Add cpu screws
@@ -246,7 +261,7 @@ class Model:
         boxes = self.get_class_detections(detections=detections, class_name=class_name)
         processed_boxes = []
         if len(boxes) > 0:
-            boxes = boxes[0] if best_only else boxes
+            boxes = [boxes[0]] if best_only else boxes
             processed_boxes = [preprocessor(box) for box in boxes]
         return self.construct_float_multi_array(processed_boxes)
 
@@ -366,7 +381,7 @@ class Model:
         """Generate a cutting path and publish it.
         """
 
-        image_np = np.copy(image)
+        image_np = image
 
         box_cname = 'Motherboard'
         # Get detected laptop_covers.
@@ -407,15 +422,24 @@ class Model:
             for ports_cut_path in ports_cut_paths:
                 draw_lines(image_np, ports_cut_path)
 
-        cv2.imshow("image_window", image_np)
-        key = cv2.waitKey(0) & 0xFF
-        cv2.destroyWindow("image_window")
-
-        if key == ord('e'):
-            return [], []
-
-        return ports_cut_path
+        return ports_cut_paths
     
+    
+    def filter_screws_near_cpu(self, screws, detections, dist_as_side_ratio=0.5, image=None, draw=False):
+        cpu_boxes = self.get_class_detections(detections=detections,
+                                            class_name='CPU')
+
+        self.screws_near_cpu = list(filter(lambda box: box_near_by_dist(box, cpu_boxes, dist_as_side_ratio), screws))
+        
+        if draw and image is not None:
+            draw_boxes(image, self.screws_near_cpu, draw_center=True, color=(0, 0, 255))
+        
+        screws = [box for box in screws if box not in self.screws_near_cpu]
+        
+        print("There are {} Screws near cpu".format(len(self.screws_near_cpu)))
+        print("There are {} Screws not near cpu".format(len(screws)))
+        
+        return screws
     
     def generate_cover_cutting_path(self,
                                     image,
@@ -427,18 +451,29 @@ class Model:
                                     hole_tol=0,
                                     return_holes_inside_cut_path=False,
                                     filter_screws=False,
-                                    avoid_screws_near_cpu=False,
                                     draw=True):
         """Generate a cutting path and publish it.
         """
 
-        image_np = np.copy(image)
+        image_np = image
 
         box_cname = 'Laptop_Back_Cover'
         # Get detected laptop_covers.
         cover_boxes, cover_scores = self.get_class_detections(detections=detections,
                                                             class_name=box_cname,
                                                             get_scores=True)
+        
+        screw_boxes = self.get_class_detections(detections=detections,
+                                                class_name='Screw',
+                                                min_score=min_screw_score)
+        
+        screw_boxes = [[sb[0] - hole_tol, sb[1] - hole_tol, sb[2] +
+                        2*hole_tol, sb[3] + 2*hole_tol] for sb in screw_boxes]
+        
+        # Visualise detected screws/ports/connectors.
+        if draw:
+            draw_boxes(image_np, screw_boxes, draw_center=True)
+        
         best_cover_box = []
         if len(cover_boxes) > 0:
             # Get laptop_cover with highest confidence.
@@ -451,28 +486,7 @@ class Model:
             # Visualise detected laptop_cover/Motherboard
             if draw:
                 draw_boxes(image_np, [best_cover_box])
-        else:
-            return [], []
         
-        screw_boxes = self.get_class_detections(detections=detections,
-                                                class_name='Screw',
-                                                min_score=min_screw_score)
-        
-        if avoid_screws_near_cpu:
-            cpu_boxes = self.get_class_detections(detections=detections,
-                                                class_name='CPU')
-
-            self.screws_near_cpu = list(filter(lambda box: box_near_by_dist(box, cpu_boxes, min_hole_dist), screw_boxes))
-            
-            screw_boxes = [box for box in screw_boxes if box not in self.screws_near_cpu]
-
-
-        screw_boxes = [[sb[0] - hole_tol, sb[1] - hole_tol, sb[2] +
-                        2*hole_tol, sb[3] + 2*hole_tol] for sb in screw_boxes]
-        
-        # Visualise detected screws/ports/connectors.
-        if draw:
-            draw_boxes(image_np, screw_boxes, draw_center=True)
 
         if filter_screws:
             screw_boxes = filter_boxes_from_image(screw_boxes, self.image, "Choose Boxes, then press 'c'")
@@ -491,23 +505,17 @@ class Model:
             if return_holes_inside_cut_path and len(best_cover_box) > 0:
                 screw_boxes = holes_inside_cut_path
         
-        # Visualise the cutting path.
-        draw_lines(image_np, cut_path)
-
-        cv2.imshow("image_window", image_np)
-        key = cv2.waitKey(0) & 0xFF
-        cv2.destroyWindow("image_window")
-
-        if key == ord('e'):
-            return [], []
+            # Visualise the cutting path.
+            if draw:
+                draw_lines(image_np, cut_path)
         
         return cut_path, screw_boxes
 
     
-    def construct_float_multi_array(self, cut_path):
+    def construct_float_multi_array(self, path_points):
         # Publish Cutting Path.
         path_msg = Float32MultiArray()
-        for x, y in cut_path:
+        for x, y in path_points:
             path_msg.data.append(y)
             path_msg.data.append(x)
         return path_msg
@@ -553,8 +561,7 @@ if __name__ == "__main__":
                                                                     # generated path params
                                                                     tol=20, method=0, min_hole_dist=10, hole_tol=0,
                                                                     return_holes_inside_cut_path=False,
-                                                                    filter_screws=False,
-                                                                    avoid_screws_near_cpu=True)
+                                                                    filter_screws=False)
             # Publish the generated flipping plan data if not empty.
             if publish_flipping_plan_data:
                 flipping_plan_data = model.get_flipping_plan_data(detections)
