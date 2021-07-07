@@ -156,9 +156,6 @@ class Model:
         # Filter screws near the cpu and add them to self.screws_near_cpu
         screw_holes = self.filter_screws_near_cpu(screw_holes, detections, dist_as_side_ratio=0.5, draw=draw, image=image)
         
-        # Adjust screw centers
-        screw_holes = correct_circles(image, screw_holes)
-        
         # Generate the cover cutting path, and screw holes from given detections and image to visulaise on.
         ports_cut_path = self.generate_ports_cutting_path(image, detections, draw=draw)
         
@@ -277,7 +274,7 @@ class Model:
         # Either read image from path or wait for ros message
         if image_path is not None and read_img:
             image_np = cv2.imread(image_path)
-            image_np = cv2.resize(image_np, (832, 480))
+            image_np = cv2.resize(image_np, (1280, 720))
         else:
             # # Wait for rgb camera stream to publish a frame.
             while True:
@@ -470,6 +467,9 @@ class Model:
         screw_boxes = [[sb[0] - hole_tol, sb[1] - hole_tol, sb[2] +
                         2*hole_tol, sb[3] + 2*hole_tol] for sb in screw_boxes]
         
+        # Adjust screw centers
+        screw_boxes = correct_circles(image_np, screw_boxes)
+        
         # Visualise detected screws/ports/connectors.
         if draw:
             draw_boxes(image_np, screw_boxes, draw_center=True)
@@ -538,21 +538,21 @@ if __name__ == "__main__":
     publish_flipping_plan_data = rospy.get_param(ns+'/publish_flipping_plan_data', False)
     publish_cut_path = rospy.get_param(ns+'/publish_cut_path', False)
     publish_screw_centers = rospy.get_param(ns+'/publish_screw_centers', False)
-    use_state = rospy.get_param(ns+'/use_state', True)
+    use_state = rospy.get_param(ns+'/use_state', False)
 
     model = Model(model_path='/home/' + user + '/' + ws + '/src/perception/models/',
                   image_topic='/camera/color/image_raw',
-                  cutting_plan_topic="/cutting_path", model_type='yolo', imgsz=832)
-
-    img_num = 10
-    images_path = '/home/' + user + '/TensorFlow/workspace/training_demo/images/test/'
+                  cutting_plan_topic="/cutting_path", model_type='yolo', imgsz=1280)
+    print(use_state)
+    img_num = 1
+    images_path = '/home/' + user + '/TensorFlow/workspace/training_demo/images/train/'
     if use_state:
         rospy.spin()
     else:
         while not rospy.is_shutdown():
             # Recieve an image msg from camera topic, then, return image and detections.
             image, detections = model.recieve_and_detect(
-                read_img=False,
+                read_img=True,
                 image_path= images_path + str(img_num) + '.jpg')
 
             # Generate the cover cutting path, and screw holes from given detections and image to visulaisSe on.
@@ -583,6 +583,6 @@ if __name__ == "__main__":
             print("Input Any Key to Continue")
             input()
             img_num += 1
-            if img_num > 17:
-                img_num = 10
+            if img_num > 60:
+                img_num = 1
     
