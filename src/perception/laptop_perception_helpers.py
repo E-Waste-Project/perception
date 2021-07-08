@@ -3,7 +3,10 @@ import numpy as np
 from bisect import bisect_right, bisect_left
 from copy import deepcopy
 from perception.coco_datasets import convert_format
-from math import fabs
+from math import fabs, sqrt
+
+import ros_numpy
+import rospy
 
 
 class Rect:
@@ -83,9 +86,13 @@ def perimeter(x):
 
 def aspect_ratio(cnt):
     x, y, w, h = cv2.boundingRect(cnt)
-    return abs((float(w) / h) - 1)
+    return abs((float(w) / h))
 
-
+def euclidean_dist(point1, point2):
+    diff_sq = 0
+    for p1, p2 in zip(point1, point2):
+        diff_sq += (p1 - p2)**2
+    return sqrt(diff_sq)
 def read_and_resize(directory, img_id, size=(720, 480), compression='.jpg'):
     read_img = cv2.imread(directory + str(img_id) + compression)
     if size is not None:
@@ -797,22 +804,208 @@ def adjust_hole_center(image, hole_boxes):
 
 #receives RGB image and a list of [x,y,w,h] lists
 def correct_circles(img,circles_list):
+    cv2.namedWindow("cropped_image")
+    cv2.namedWindow("output")
+    param1 = 40
+    param2 = 38
+    kernel = 0
+    k = 3
+    min_len = 0
+    max_len = 31
+    min_circ = 0
+    sz=3
+    dist=3
+
+    cv2.createTrackbar('param1', 'cropped_image',
+                       param1, 500, lambda x: None)
+    cv2.createTrackbar('param2', 'cropped_image',
+                       param2, 500, lambda x: None)
+    cv2.createTrackbar('kernel', 'cropped_image',
+                       kernel, 255, lambda x: None)
+    cv2.createTrackbar('k', 'cropped_image',
+                       k, 20, lambda x: None)
+    cv2.createTrackbar('min_len', 'cropped_image',
+                       min_len, 255, lambda x: None)
+    cv2.createTrackbar('max_len', 'cropped_image',
+                       max_len, 255, lambda x: None)
+    cv2.createTrackbar('min_circ', 'cropped_image',
+                       min_circ, 255, lambda x: None)
+    cv2.createTrackbar('sz', 'cropped_image',
+                       sz, 50, lambda x: None)
+    cv2.createTrackbar('dist', 'cropped_image',
+                        dist, 50, lambda x: None)
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     new_circles_list = []
+    circle_new = None
+    key = 0
+    use_canny=True
     for circle_old in circles_list:
-        
-        cropped_img = gray[circle_old[1] : circle_old[1]+circle_old[3]+1 ,
-                           circle_old[0] : circle_old[0]+circle_old[2]+1]
-        
-        circle_new = cv2.HoughCircles(cropped_img, cv2.HOUGH_GRADIENT, 1.2, 100)
-        old_center = [circle_old[2]//2 , circle_old[3]//2]
-        center_difference = [circle_new[0][0] - old_center[0],
-                             circle_new[0][1] - old_center[1]]
-        
-        new_circles_list.append([center_difference[0] + circle_old[0],     #New X
-                                 center_difference[1] + circle_old[1],     #New Y
-                                 circle_old[2],                        #Same W
-                                 circle_old[3]])                       #Same H
+        #############################
+        # Pre-Processing            #
+        #############################
+        while key != ord('e'):
+            cropped_img = deepcopy(gray[circle_old[1] : circle_old[1]+circle_old[3]+1 ,
+                            circle_old[0] : circle_old[0]+circle_old[2]+1])
+            cropped_color_img = deepcopy(img[circle_old[1]: circle_old[1]+circle_old[3]+1,
+                                        circle_old[0]: circle_old[0]+circle_old[2]+1])
+            param1 = max(cv2.getTrackbarPos('param1', 'cropped_image'), 1)
+            param2 = max(cv2.getTrackbarPos('param2', 'cropped_image'),1)
+            kernel_sz = max(cv2.getTrackbarPos('kernel', 'cropped_image'), 1)
+            k = max(2*cv2.getTrackbarPos('k', 'cropped_image') - 1, 1)
+            min_len = cv2.getTrackbarPos('min_len', 'cropped_image')
+            max_len = cv2.getTrackbarPos('max_len', 'cropped_image')
+            min_circ = cv2.getTrackbarPos('min_circ', 'cropped_image') / 255.0
+            sz = cv2.getTrackbarPos('sz', 'cropped_image')
+            dist = max(cv2.getTrackbarPos('dist', 'cropped_image'), 1)
+            output = cv2.GaussianBlur(cropped_img, (k, k), 0)
+
+            # ret, output = cv2.threshold(output, 80, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
+            output = cv2.adaptiveThreshold(
+                output, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2)
+
+            if use_canny:
+                output = cv2.Canny(output, param1, param2)
+
+            # kernel = np.ones((2, 2), np.uint8)
+            kernel = cv2.getStructuringElement(
+                cv2.MORPH_RECT, (kernel_sz, kernel_sz))
+            # Use erosion and dilation combination to eliminate false positives.
+            # output = cv2.erode(output, kernel, iterations=1)
+            output = cv2.dilate(output, kernel, iterations=1)
+            # output = cv2.morphologyEx(output, cv2.MORPH_OPEN, kernel, iterations=1)
+            # kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2))
+
+            # ========================================================= #
+            cv2.imshow("output", output)
+            key = cv2.waitKey(10) & 0xFF
+            #############################
+            # Find and Filter contours  #
+            #############################
+
+            contours, hierarchy = cv2.findContours(
+                output, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+
+
+            # #
+            # # contours = sorted(contours, key=cv2.contourArea, reverse=False)[min_area:top_area]
+            contours = sorted(contours, key=circularity)
+            contours_circ = list(map(circularity, contours))
+            start = bisect_left(contours_circ, min_circ)
+            contours = contours[start:]
+            contours.reverse()
+
+            contours = sorted(contours, key=cv2.contourArea)
+            contours_per = list(map(cv2.contourArea, contours))
+            start = bisect_left(contours_per, min_len)
+            end = bisect_right(contours_per, max_len)
+            contours = contours[start:end+1]
+            contours = sorted(contours, key=lambda c: (perimeter(c)/(max_len+1)) * circularity(c))
+            contours.reverse()
+
+            old_center = [circle_old[2]//2, circle_old[3]//2]
+            # contours = sorted(contours, key=aspect_ratio)[:top_len]
+            sz = min(len(contours), sz)
+            if len(contours) > 0:
+                contours_poly = [None] * sz
+                boundRect = [None] * sz
+                centers = [None] * sz
+                radius = [None] * sz
+                for i in range(sz):
+                    contours_poly[i] = cv2.approxPolyDP(contours[i], 3, True)
+                    boundRect[i] = cv2.boundingRect(contours_poly[i])
+                    centers[i], radius[i] = cv2.minEnclosingCircle(contours_poly[i])
+                filtered_centers = list(filter(lambda c: euclidean_dist(c[1], old_center) <= dist, enumerate(centers)))
+                best_center = old_center
+                if len(filtered_centers) > 0:
+                    best_center = filtered_centers[0][1]
+                    i = filtered_centers[0][0]
+                color = (0, 0, 255)
+                cv2.circle(cropped_color_img, (int(best_center[0]), int(
+                    best_center[1])), 1, color, 1)
+                cv2.circle(cropped_color_img, (int(old_center[0]), int(
+                    old_center[1])), 1, (255,0,0), 1)
+                cv2.drawContours(cropped_color_img, contours[0], -1, (0, 255, 0), 1)
+            cv2.imshow("cropped_image", cropped_color_img)
+            key = cv2.waitKey(10) & 0xFF
+            # center_difference = [i[0] - old_center[0],
+            #                     i[1] - old_center[1]]
+
+            # new_circles_list.append([center_difference[0] + circle_old[0],     #New X
+            #                         center_difference[1] + circle_old[1],     #New Y
+            #                         circle_old[2],                        #Same W
+            #                         circle_old[3]])
+    # param1 = 50
+    # param2 = 20
+    # dp = 40
+
+    # cv2.createTrackbar('param1', 'cropped_image',
+    #                    param1, 500, lambda x: None)
+    # cv2.createTrackbar('param2', 'cropped_image',
+    #                param2, 500, lambda x: None)
+    # cv2.createTrackbar('thresh', 'cropped_image',
+    # 0, 255, lambda x: None)
+    # cv2.createTrackbar('dp', 'cropped_image',
+    #                    dp, 500, lambda x: None)
+    # cv2.createTrackbar('minR', 'cropped_image',
+    #                    0, 255, lambda x: None)
+    # cv2.createTrackbar('maxR', 'cropped_image',
+    #                    0, 255, lambda x: None)
+    # cv2.createTrackbar('minDist', 'cropped_image',
+    #                    0, 255, lambda x: None)
+    # gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    # new_circles_list = []
+    # circle_new = None
+    # key = 0
+    # for circle_old in circles_list:
+    #     while True and key != ord('e'):
+    #         cropped_img = deepcopy(gray[circle_old[1] : circle_old[1]+circle_old[3]+1 ,
+    #                         circle_old[0] : circle_old[0]+circle_old[2]+1])
+    #         cropped_color_img = deepcopy(img[circle_old[1]: circle_old[1]+circle_old[3]+1,
+    #                                     circle_old[0]: circle_old[0]+circle_old[2]+1])
+    #         param1 = max(cv2.getTrackbarPos('param1', 'cropped_image'), 1)
+    #         param2 = max(cv2.getTrackbarPos('param2', 'cropped_image'),1)
+    #         thresh = cv2.getTrackbarPos('thresh', 'cropped_image')
+    #         dp = cv2.getTrackbarPos('dp', "cropped_image") / 255.0 + 1
+    #         minR = cv2.getTrackbarPos('minR', 'cropped_image')
+    #         maxR = cv2.getTrackbarPos('maxR', 'cropped_image')
+    #         minDist = max(cv2.getTrackbarPos('minDist', 'cropped_image'), 1)
+    #         k = thresh*2 + 1
+    #         print(param1, param2, thresh, dp, minR, maxR, minDist, k)
+    #         cropped_img = cv2.GaussianBlur(cropped_img, (k,k), 0)
+    #         # cv2.imshow("cropped_image", cropped_img)
+    #         # cv2.waitKey(0)
+    #         # apply Otsu's automatic thresholding
+    #         # (T, cropped_img) = cv2.threshold(cropped_img, thresh, 255, cv2.THRESH_BINARY)
+
+    #         cv2.imshow("cropped_image", cropped_img)
+    #         key = cv2.waitKey(10) & 0xFF
+    #         circle_new = cv2.HoughCircles(
+    #             cropped_img, cv2.HOUGH_GRADIENT, dp, minDist, param1=param1, param2=param2, minRadius=minR, maxRadius=maxR)
+    #         if circle_new is not None:
+    #             circle_new = np.uint16(np.around(circle_new))
+    #             for i in circle_new[0, :]:
+
+    #                 old_center = [circle_old[2]//2 , circle_old[3]//2]
+    #                 center_difference = [i[0] - old_center[0],
+    #                                     i[1] - old_center[1]]
+                    
+    #                 new_circles_list.append([center_difference[0] + circle_old[0],     #New X
+    #                                         center_difference[1] + circle_old[1],     #New Y
+    #                                         circle_old[2],                        #Same W
+    #                                         circle_old[3]])
+    #                                     # draw the outer circle
+    #                 cv2.circle(cropped_color_img,(i[0],i[1]),i[2],(0,255,0),1)
+    #                 # draw the center of the circle
+    #                 cv2.circle(cropped_color_img,(i[0],i[1]),1,(0,0,255),1)
+    #                 cv2.circle(cropped_color_img,
+    #                            (old_center[0], old_center[1]), 1, (255, 0, 0), 1)
+    #                 cv2.imshow("cropped_image", cropped_color_img)
+    #                 key = cv2.waitKey(10) & 0xFF
+
+    #             print("Circle Found")
+    #         else:     
+    #             new_circles_list.append(circle_old)  
+    #             print("No Circle")
         
         return new_circles_list
     
