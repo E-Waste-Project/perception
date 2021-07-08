@@ -521,7 +521,8 @@ def interpolate(p1, p2, step):
     if p2 == p1:
         return [p1]
     sign = int(abs(p2-p1) / (p2-p1))
-    return list(range(p1, p2, step * sign))
+    print('step = ', step , 'sign  = ', sign)
+    return list(range(p1, p2, max(step,1) * sign))
 
 def interpolate_path(path, npoints=20):
     new_path = []
@@ -529,11 +530,11 @@ def interpolate_path(path, npoints=20):
         x1, y1 = path[i]
         x2, y2 = path[i+1]
         if abs(y2-y1) > 0:
-            step = int(abs(y2-y1) / npoints)
+            step = round(abs(y2-y1) / npoints)
             new_ys = interpolate(y1, y2, step)
             new_xs = [x1] * len(new_ys)
         else:
-            step = int(abs(x2-x1) / npoints)
+            step = round(abs(x2-x1) / npoints)
             new_xs = interpolate(x1, x2, step)
             new_ys = [y1] * len(new_xs)
         new_path.extend([(x, y) for x, y in zip(new_xs, new_ys)])

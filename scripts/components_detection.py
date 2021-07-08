@@ -150,14 +150,14 @@ class Model:
                                                                   min_screw_score=0,
                                                                   tol=20, method=1, min_hole_dist=10, hole_tol=0,  # generated path params
                                                                   return_holes_inside_cut_path=False,
-                                                                  filter_screws=False,
+                                                                  filter_screws=True,
                                                                   draw=draw)
         
         # Filter screws near the cpu and add them to self.screws_near_cpu
         screw_holes = self.filter_screws_near_cpu(screw_holes, detections, dist_as_side_ratio=0.5, draw=draw, image=image)
         
         # Adjust screw centers
-        screw_holes = correct_circles(image, screw_holes)
+        #screw_holes = correct_circles(image, screw_holes)
         
         # Generate the cover cutting path, and screw holes from given detections and image to visulaise on.
         ports_cut_path = self.generate_ports_cutting_path(image, detections, draw=draw)
@@ -372,7 +372,8 @@ class Model:
         for sh in screw_boxes:
             x, y, x2, y2 = sh[0], sh[1], sh[0] + sh[2], sh[1] + sh[3]
             box_path = [(x, y), (x, y2), (x2, y2), (x2, y), (x, y)]
-            box_path = interpolate_path(box_path, npoints=npoints) if interpolate else box_path
+            if interpolate:
+                box_path = interpolate_path(box_path, npoints=npoints)
             cut_boxes.append(box_path)
         return cut_boxes
     
@@ -489,9 +490,9 @@ class Model:
         
 
         if filter_screws:
-            screw_boxes = filter_boxes_from_image(screw_boxes, self.image, "Choose Boxes, then press 'c'")
+            screw_boxes = filter_boxes_from_image(screw_boxes, image_np, "Choose Boxes, then press 'c'")
             # Visualise detected screws.
-            draw_boxes(image_np, screw_boxes)
+            draw_boxes(image_np, screw_boxes, color=(0, 0, 255))
         
         # Plan the Cutting Path.
         cut_path = []
@@ -561,7 +562,12 @@ if __name__ == "__main__":
                                                                     # generated path params
                                                                     tol=20, method=0, min_hole_dist=10, hole_tol=0,
                                                                     return_holes_inside_cut_path=False,
-                                                                    filter_screws=False)
+                                                                    filter_screws=True)
+            cv2.imshow("image", image)
+            key = cv2.waitKey(0) & 0xFF
+            cv2.destroyAllWindows()
+            if key == ord('e'):
+                continue
             # Publish the generated flipping plan data if not empty.
             if publish_flipping_plan_data:
                 flipping_plan_data = model.get_flipping_plan_data(detections)
@@ -574,7 +580,7 @@ if __name__ == "__main__":
                 print("Publishing screw cut paths")
                 # screw_centers = [(sh[0] + (sh[2] // 2), sh[1] + (sh[3] // 2)) for sh in screw_holes]
                 cut_boxes = model.generate_rectangular_cutting_path(screw_holes, interpolate=False)
-                model.publish_path(cut_boxes)
+                model.publish_path(cut_boxes[0])
             
             # Publish the generated cutting path if not empty.
             if len(cut_path) > 0 and publish_cut_path:
