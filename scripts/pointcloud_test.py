@@ -26,8 +26,8 @@ class Subscribers():
         # self.competition_xyz_pub = rospy.Publisher("/competition_xyz", PoseArray, queue_size=1)
         self.px_to_xyz_pub = rospy.Publisher("/px_to_xyz", PoseArray, queue_size=1)
 
-    def calculate_dist_3D(self, msg):
-        aligned_depth_image = ros_numpy.numpify(msg) * 0.001
+    def calculate_dist_3D(self, aligned_depth_msg):
+        aligned_depth_image = ros_numpy.numpify(aligned_depth_msg) * 0.001
         index_mat = np.indices(aligned_depth_image.shape)
         print(index_mat.shape)
         dist_mat = np.zeros((3, self.intrinsics['h'], self.intrinsics['w']))
