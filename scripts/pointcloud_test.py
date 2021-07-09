@@ -19,11 +19,6 @@ class Subscribers():
             "/camera/aligned_depth_to_color/camera_info", CameraInfo, self.info_callback)
         rospy.Subscriber("/cutting_path", Float32MultiArray,
                          self.cutting_callback)
-        # self.cut_xyz_pub = rospy.Publisher("/cut_xyz", PoseArray, queue_size=1)
-        # self.screw_xyz_pub = rospy.Publisher("/screw_xyz", PoseArray, queue_size=1)
-        # self.grip_xyz_pub = rospy.Publisher("/grip_xyz", PoseArray, queue_size=1)
-        # self.flip_xyz_pub = rospy.Publisher("/flip_xyz", PoseArray, queue_size=1)
-        # self.competition_xyz_pub = rospy.Publisher("/competition_xyz", PoseArray, queue_size=1)
         self.px_to_xyz_pub = rospy.Publisher("/px_to_xyz", PoseArray, queue_size=1)
 
     def calculate_dist_3D(self, aligned_depth_msg):
@@ -36,7 +31,6 @@ class Subscribers():
         dist_mat[1] = (index_mat[1] - self.intrinsics['px']) * \
             aligned_depth_image / self.intrinsics['fx']
         dist_mat[2] = aligned_depth_image
-        #print(dist_mat[:, self.intrinsics['h'] // 2, self.intrinsics['w'] // 2])
         return dist_mat
 
     def cutting_callback(self, msg):
@@ -74,18 +68,6 @@ class Subscribers():
         # plt.plot(self.x_list,self.y_list)
         # plt.show(block=False)
         
-        # received_msg = rospy.wait_for_message("/operation",String)
-        # if received_msg.data == "Cutting":
-        #     self.cut_xyz_pub.publish(pose_msg)
-        # elif received_msg.data == "Screw Loosening":
-        #     self.screw_xyz_pub.publish(pose_msg)
-        # elif received_msg.data == "Gripping":
-        #     self.grip_xyz_pub.publish(pose_msg)
-        # elif received_msg.data == "Flipping":
-        #     self.flip_xyz_pub.publish(pose_msg)
-        # elif received_msg.data == "Competition":
-        #     rospy.sleep(2)
-        #     self.competition_xyz_pub.publish(pose_msg)
         self.px_to_xyz_pub.publish(pose_msg)
 
 

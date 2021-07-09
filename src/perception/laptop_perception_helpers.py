@@ -3,7 +3,8 @@ import numpy as np
 from bisect import bisect_right, bisect_left
 from copy import deepcopy
 from perception.coco_datasets import convert_format
-from math import fabs, sqrt
+from math import fabs, sqrt, sin, cos, pi
+from realsense2_camera.msg import Extrinsics
 
 import ros_numpy
 import rospy
@@ -182,14 +183,16 @@ def filter_boxes_from_image(boxes, image, window_name, create_new_window=True):
     return filtered_boxes
 
 
-def preprocess(input_img, gauss_kernel=21, clahe_kernel=2,
+def preprocess(input_img, median_sz=12, gauss_kernel=21, clahe_kernel=2,
                morph_kernel=3, iterations=3, dilate=False, use_canny=False, thresh1=42, thresh2=111):
     # Contrast Norm + Gauss Blur + Adaptive Threshold + Dilation + Canny
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(clahe_kernel, clahe_kernel))
     output_img = clahe.apply(input_img)
 
+    output_img = cv2.medianBlur(output_img, median_sz)
+    
     output_img = cv2.GaussianBlur(output_img, (gauss_kernel, gauss_kernel), 0)
-
+    
     output_img = cv2.adaptiveThreshold(output_img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2)
 
     if use_canny:
@@ -214,28 +217,61 @@ def filter_contours(input_contours, sorting_key, min_val=None, max_val=None, rev
         filtered_contours = sorted_contours[start:end+1]
     else:
         filtered_contours = sorted_contours[start:]
+    if not reverse:
+            filtered_contours.reverse()
     return filtered_contours
 
 
 def detect_laptop(input_img, draw_on=None):
     # Takes gray_scale img, returns rect values of detected laptop.
 
-    min_len = 138000
-    max_len = 200000
-    k = 15
+    min_len = 200000
+    max_len = 500000
+    k = 1
+    median_sz = 12
     c = 2
-
-    preprocessed_img = preprocess(input_img, gauss_kernel=k, clahe_kernel=c, morph_kernel=5, iterations=1, dilate=True)
+    morph_kernel=1
+    iterations=1
+    
+    preprocessed_img = preprocess(input_img, median_sz=median_sz, gauss_kernel=k, clahe_kernel=c,
+                                  morph_kernel=morph_kernel, iterations=iterations, dilate=False)
 
     all_contours, hierarchy = cv2.findContours(preprocessed_img, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
 
     filtered_contours = filter_contours(all_contours, sorting_key=enclosing_rect_area,
                                         min_val=min_len, max_val=max_len, reverse=False)
+    
     if len(filtered_contours) > 0:
-        rect_params = Rect(*cv2.boundingRect(filtered_contours[0]))
+        cnt = filter_contours[0]
+        
+        # Find rotated rect parameters.
+        rect = cv2.minAreaRect(cnt)
+        box = cv2.boxPoints(rect)
+        box = np.int0(box)
+        
+        # Retrieve the key parameters of the rotated bounding box
+        center = (int(rect[0][0]),int(rect[0][1])) 
+        width = int(rect[1][0])
+        height = int(rect[1][1])
+        angle = int(rect[2])
+
+        if width < height:
+            angle = 90 - angle
+            nw = (width // 2) * sin(angle * pi / 180)
+            nh = (width // 2) * cos(angle * pi / 180)
+            flip_radius = width
+        else:
+            angle = -angle
+            nw = (height // 2) * sin(angle * pi / 180)
+            nh = (height // 2) * cos(angle * pi / 180)
+            flip_radius = height
+        
+        flip_point = (int(center[0] + nw), int(center[1] + nh))
+        upper_point = (int(center[0] + nw), int(center[1] - nh))
+        laptop_data = [center[1], center[0], flip_point[1], flip_point[0], upper_point[1], upper_point[0]]
         if draw_on is not None:
-            rect_params.draw_on(draw_on)
-        return rect_params
+            cv2.drawContours(draw_on, [box], 0, (0, 255, 0), thickness=5)
+        return laptop_data
     else:
         return None
 
@@ -762,6 +798,50 @@ def plan_port_cutting_path(motherboard_coords, ports_coords, near_edge_dist, gro
         cut_paths.append([(x2, y), (x2, y2), (x, y2), (x, y)])
     
     return cut_paths            
+
+def calculate_dist_3D(depth_img, intrinsics):
+    depth_img *= 0.001
+    index_mat = np.indices(depth_img.shape)
+    print(index_mat.shape)
+    dist_mat = np.zeros((3, intrinsics['h'], intrinsics['w']))
+    dist_mat[0] = (index_mat[1] - intrinsics['px']) * \
+        depth_img / intrinsics['fx']
+    dist_mat[1] = (index_mat[0] - intrinsics['py']) * \
+        depth_img / intrinsics['fy']
+    dist_mat[2] = depth_img
+    return dist_mat
+
+def transform_depth_to_color_frame(dist_mat, extrinsics_topic="/camera/extrinsics/depth_to_color"):
+    msg = rospy.wait_for_message(extrinsics_topic, Extrinsics)
+    r = np.array(msg.rotation)
+    t = np.array(msg.translation)
+    transform_mat = np.zeros((3, 4))
+    transform_mat[:, -1] = t
+    transform_mat[:, :-1] = r.reshape((3, 3))
+    modified_dist_mat = np.ones((4, dist_mat.shape[1]*dist_mat.shape[2]))
+    modified_dist_mat[:-1, :] = dist_mat.reshape((3, -1))
+    return np.dot(transform_mat, modified_dist_mat).reshape(dist_mat.shape)
+
+def constrain_environment(dist_mat, x_lim, y_lim, z_lim):    
+    # convert depth to a uint8 image with pixel values (0 -> 255)
+    dist_image = deepcopy(dist_mat[2]) * 255 / np.max(dist_mat[2])
+    dist_image = dist_image.astype(np.uint8)
+    _, dist_image = cv2.threshold(dist_image, 0, 255, cv2.THRESH_BINARY)
+    
+    x, y, z = dist_mat[0], dist_mat[1], dist_mat[2]
+    
+    x_thresh = cv2.inRange(x, *x_lim)
+    _, x_thresh = cv2.threshold(x_thresh, 0, 1, cv2.THRESH_BINARY)
+
+    y_thresh = cv2.inRange(y, *y_lim)
+    _, y_thresh = cv2.threshold(y_thresh, 0, 1, cv2.THRESH_BINARY)
+    
+    z_thresh = cv2.inRange(z, *z_lim)
+    _, z_thresh = cv2.threshold(z_thresh, 0, 1, cv2.THRESH_BINARY)
+    
+    # color_img *= (x_thresh * y_thresh * z_thresh).reshape((x.shape[0], x.shape[1], 1))
+    dist_image *= x_thresh * y_thresh * z_thresh
+    return dist_image
 
 def adjust_hole_center(image, hole_boxes):
     output = image.copy()
