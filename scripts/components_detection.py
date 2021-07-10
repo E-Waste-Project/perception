@@ -4,7 +4,7 @@ from perception.yolo_detector import Yolo
 from perception.coco_datasets import convert_format
 from perception.laptop_perception_helpers import plan_cover_cutting_path, interpolate_path,\
                                                  plan_port_cutting_path, filter_boxes_from_image,\
-                                                     draw_lines, draw_boxes, box_near_by_dist, box_to_center, correct_circles
+                                                 draw_lines, draw_boxes, box_near_by_dist, box_to_center, correct_circles
 from perception.msg import PerceptionData
 import sys
 import rospy

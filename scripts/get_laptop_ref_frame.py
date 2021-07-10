@@ -15,62 +15,49 @@ from perception.laptop_perception_helpers import detect_laptop, calculate_dist_3
 class LaptopPoseDetector:
     def __init__(self):
         self.aligned_depth_img = None
-        # rospy.Subscriber(
-        #     "/camera/aligned_depth_to_color/camera_info", CameraInfo, self.info_callback)
+        rospy.Subscriber("/get_laptop_pose", String, self.detect_pose_callback)
         self.img_publisher = rospy.Publisher("/img", Image, queue_size=1)
         self.laptop_pose_publisher = rospy.Publisher("/laptop_pose", Float32MultiArray, queue_size=1)
-        self.min_x, self.max_x = 1802, 2212
-        self.min_y, self.max_y = 0, 2125
-        self.min_z, self.max_z = 2249, 2349
+        self.trackbar_limits = {'min_x': 1802, 'max_x': 2212,
+                                'min_y': 0   , 'max_y': 2125,
+                                'min_z': 2249, 'max_z': 2349}
+        self.limits = {}
+        for key, val in self.trackbar_limits.items():
+            self.limits[key] = 0.001* val - 2
         
     def _tune_pose_detector(self):
 
         win_name = 'constrained environment'
         cv2.namedWindow(win_name)
-        cv2.createTrackbar('min_x', 'distance_tuning', self.min_x, 4000, lambda x: None)
-        cv2.createTrackbar('max_x', 'distance_tuning', self.max_x, 4000, lambda x: None)
-        cv2.createTrackbar('min_y', 'distance_tuning', self.min_y, 4000, lambda x: None)
-        cv2.createTrackbar('max_y', 'distance_tuning', self.max_y, 4000, lambda x: None)
-        cv2.createTrackbar('min_z', 'distance_tuning', self.min_z, 4000, lambda x: None)
-        cv2.createTrackbar('max_z', 'distance_tuning', self.max_z, 4000, lambda x: None)
+        for key, val in self.trackbar_limits.items():
+            cv2.createTrackbar(key, win_name, val, 4000, lambda x: None)
 
         key = 0
         while not rospy.is_shutdown() and key != ord('e'):
             
-            min_x = (0.001 * cv2.getTrackbarPos('min_x', 'distance_tuning') - 2)
-            max_x = (0.001 * cv2.getTrackbarPos('max_x', 'distance_tuning') - 2)
-            min_y = (0.001 * cv2.getTrackbarPos('min_y', 'distance_tuning') - 2)
-            max_y = (0.001 * cv2.getTrackbarPos('max_y', 'distance_tuning') - 2)
-            min_z = (0.001 * cv2.getTrackbarPos('min_z', 'distance_tuning') - 2)
-            max_z = (0.001 * cv2.getTrackbarPos('max_z', 'distance_tuning') - 2)
+            for key in self.trackbar_limits.keys():
+                self.limits[key] = (0.001 * cv2.getTrackbarPos(key, win_name) - 2)
             
             # color_img_msg = rospy.wait_for_message(
             #         "/camera/color/image_raw", Image)
             # color_img = ros_numpy.numpify(color_img_msg)
             # color_img = cv2.cvtColor(color_img, cv2.COLOR_BGR2RGB)
             # print("received Image")
-            depth_img_msg = rospy.wait_for_message("/camera/depth/image_rect_raw", Image)
-            depth_img = ros_numpy.numpify(depth_img_msg)
-            intrinsics = self.get_intrinsics()
-            dist_mat = calculate_dist_3D(depth_img, intrinsics)
-            dist_mat = transform_depth_to_color_frame(dist_mat)
-            dist_image = constrain_environment(deepcopy(dist_mat),
-                                               x_lim=(self.x_min, self.x_max),
-                                               y_lim=(self.y_min, self.y_max),
-                                               z_lim=(self.z_min, self.z_max))
+            dist_image, dist_mat = self.detect_pose()
+            color_dist_image = cv2.cvtColor(dist_image, cv2.COLOR_GRAY2BGR)
+            laptop_data_px = detect_laptop(dist_image, draw_on=color_dist_image)
             
             # img_msg = ros_numpy.msgify(Image, color_img, encoding='bgr8')
             img_msg = ros_numpy.msgify(Image, dist_image, encoding='mono8')
 
             self.img_publisher.publish(img_msg)
-            laptop_data_msg = rospy.wait_for_message("/laptop_data", Float32MultiArray) # center, flip_point
+            # laptop_data_msg = rospy.wait_for_message("/laptop_data", Float32MultiArray) # center, flip_point
         
             # show converted depth image
-            cv2.imshow(win_name, dist_image)
+            cv2.imshow(win_name, color_dist_image)
             key = cv2.waitKey(10) & 0xFF
 
-        if self.tune:
-            cv2.destroyWindow(win_name)
+        cv2.destroyWindow(win_name)
     
     def get_intrinsics(self):
         intrinsics = {'fx': 0, 'fy': 0, 'px': 0, 'py': 0, 'w': 0, 'h': 0}
@@ -83,11 +70,29 @@ class LaptopPoseDetector:
         intrinsics['h'] = msg.height
         return intrinsics
     
+    def detect_pose(self):
+        depth_img_msg = rospy.wait_for_message("/camera/depth/image_rect_raw", Image)
+        depth_img = ros_numpy.numpify(depth_img_msg)
+        intrinsics = self.get_intrinsics()
+        dist_mat = calculate_dist_3D(depth_img, intrinsics)
+        dist_mat = transform_depth_to_color_frame(dist_mat)
+        dist_image = constrain_environment(deepcopy(dist_mat),
+                                            x_lim=(self.limits['min_x'], self.limits['max_x']),
+                                            y_lim=(self.limits['min_y'], self.limits['max_y']),
+                                            z_lim=(self.limits['min_z'], self.limits['max_z']))
+        return dist_image, dist_mat
+    
     def detect_pose_callback(self, msg):
-        dist_image = self.constrain_environment()
-        laptop_data = detect_laptop(dist_image)
+        dist_image, dist_mat = self.detect_pose()
+        laptop_data_px = detect_laptop(dist_image)
+        laptop_data_xyz = []
+        for i in range(0, len(laptop_data_px), 2):
+            x_px = laptop_data_px[i]
+            y_px = laptop_data_px[i+1]
+            xyz = dist_mat[:, y_px, x_px].tolist()
+            laptop_data_xyz.extend(xyz)
         laptop_data_msg = Float32MultiArray()
-        laptop_data_msg.data = laptop_data
+        laptop_data_msg.data = laptop_data_xyz
         self.laptop_pose_publisher.publish(laptop_data_msg)
         
 

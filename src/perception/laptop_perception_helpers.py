@@ -228,7 +228,7 @@ def detect_laptop(input_img, draw_on=None):
     min_len = 200000
     max_len = 500000
     k = 1
-    median_sz = 12
+    median_sz = 23
     c = 2
     morph_kernel=1
     iterations=1
@@ -242,7 +242,7 @@ def detect_laptop(input_img, draw_on=None):
                                         min_val=min_len, max_val=max_len, reverse=False)
     
     if len(filtered_contours) > 0:
-        cnt = filter_contours[0]
+        cnt = filtered_contours[0]
         
         # Find rotated rect parameters.
         rect = cv2.minAreaRect(cnt)
@@ -268,7 +268,7 @@ def detect_laptop(input_img, draw_on=None):
         
         flip_point = (int(center[0] + nw), int(center[1] + nh))
         upper_point = (int(center[0] + nw), int(center[1] - nh))
-        laptop_data = [center[1], center[0], flip_point[1], flip_point[0], upper_point[1], upper_point[0]]
+        laptop_data = [center[0], center[1], flip_point[0], flip_point[1], upper_point[0], upper_point[1]]
         if draw_on is not None:
             cv2.drawContours(draw_on, [box], 0, (0, 255, 0), thickness=5)
         return laptop_data
@@ -800,7 +800,7 @@ def plan_port_cutting_path(motherboard_coords, ports_coords, near_edge_dist, gro
     return cut_paths            
 
 def calculate_dist_3D(depth_img, intrinsics):
-    depth_img *= 0.001
+    depth_img = depth_img * 0.001
     index_mat = np.indices(depth_img.shape)
     print(index_mat.shape)
     dist_mat = np.zeros((3, intrinsics['h'], intrinsics['w']))

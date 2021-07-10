@@ -197,7 +197,7 @@ while True:
         cv2.circle(img, center, 10, color=(255, 0, 0), thickness=2)
         cv2.circle(img, flip_point, 20, color=(0, 255, 0), thickness=-1)
         cv2.line(img, upper_point, flip_point, color=(0, 255, 0), thickness=2)
-        laptop_data_msg = Int32MultiArray()
+        laptop_data_msg = Float32MultiArray()
         laptop_data_msg.data = [center[0], center[1], flip_point[0], flip_point[1], flip_radius]
         laptop_data_publisher.publish(laptop_data_msg)
     # ========================================================= #
