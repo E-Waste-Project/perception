@@ -5,7 +5,7 @@ from copy import deepcopy
 from perception.coco_datasets import convert_format
 from math import fabs, sqrt, sin, cos, pi
 from realsense2_camera.msg import Extrinsics
-from sensor_msgs.msg import CameraInfo
+from sensor_msgs.msg import CameraInfo, Image
 
 import ros_numpy
 import rospy
@@ -823,16 +823,32 @@ def calculate_dist_3D(depth_img, intrinsics):
     dist_mat[2] = depth_img
     return dist_mat
 
-def transform_depth_to_color_frame(dist_mat, extrinsics_topic="/camera/extrinsics/depth_to_color"):
-    msg = rospy.wait_for_message(extrinsics_topic, Extrinsics)
-    r = np.array(msg.rotation)
-    t = np.array(msg.translation)
+def transform_depth_to_color_frame(dist_mat, extrinsics):
+    r = np.array(extrinsics.rotation)
+    t = np.array(extrinsics.translation)
     transform_mat = np.zeros((3, 4))
     transform_mat[:, -1] = t
     transform_mat[:, :-1] = r.reshape((3, 3))
     modified_dist_mat = np.ones((4, dist_mat.shape[1]*dist_mat.shape[2]))
     modified_dist_mat[:-1, :] = dist_mat.reshape((3, -1))
     return np.dot(transform_mat, modified_dist_mat).reshape(dist_mat.shape)
+
+
+def calculate_dist_mat(depth_img, intrinsics, transform_to_color=True):
+    dist_mat = calculate_dist_3D(depth_img, intrinsics)
+    if transform_to_color:
+        dist_mat = transform_depth_to_color_frame(dist_mat)
+    return dist_mat
+
+def px_to_xyz(dist_mat, px_data):
+    data_xyz = []
+    for i in range(0, len(px_data), 2):
+        x_px = px_data[i]
+        y_px = px_data[i+1]
+        xyz = dist_mat[:, y_px, x_px].tolist()
+        data_xyz.extend(xyz)
+    return data_xyz
+
 
 def constrain_environment(dist_mat, x_lim, y_lim, z_lim):    
     # convert depth to a uint8 image with pixel values (0 -> 255)
@@ -854,6 +870,60 @@ def constrain_environment(dist_mat, x_lim, y_lim, z_lim):
     # color_img *= (x_thresh * y_thresh * z_thresh).reshape((x.shape[0], x.shape[1], 1))
     dist_image *= x_thresh * y_thresh * z_thresh
     return dist_image
+
+def detect_laptop_pose(dist_mat, x_min=-2, x_max=2, y_min=-2, y_max=2, z_min=0, z_max=4, draw=False):
+    dist_image = constrain_environment(deepcopy(dist_mat),
+                                       x_lim=(x_min, x_max),
+                                       y_lim=(y_min, y_max),
+                                       z_lim=(z_min, z_max))
+    
+    dist_image = cv2.cvtColor(dist_image, cv2.COLOR_GRAY2BGR)
+    draw_on = dist_image if draw else None
+    laptop_data_px = detect_laptop(dist_image, draw_on=draw_on)
+    laptop_data_xyz = px_to_xyz(dist_mat, laptop_data_px)
+    return laptop_data_xyz, dist_image
+
+class RealsenseHelpers():
+    def __init__(self, raw_depth=True):
+        if raw_depth:
+            self.depth_topic="/camera/depth/image_rect_raw"
+            self.intrinsics_topic="/camera/depth/camera_info"
+        else:
+            self.depth_topic = "/camera/aligned_depth_to_color/image_raw"
+            self.intrinsics_topic = "/camera/color/camera_info"
+        self.extrinsics_topic = "/camera/extrinsics/depth_to_color"
+
+    def calculate_dist_mat(self):
+        depth_img_msg = rospy.wait_for_message(
+            self.depth_topic, Image)
+        depth_img = ros_numpy.numpify(depth_img_msg)
+        intrinsics = get_intrinsics(self.intrinsics_topic)
+        dist_mat = calculate_dist_mat(depth_img, intrinsics)
+        return dist_mat
+
+    def constrain_environment(self, x_min=-2, x_max=2, y_min=-2, y_max=2, z_min=0, z_max=4):
+        dist_mat = self.calculate_dist_mat()
+        dist_image = constrain_environment(deepcopy(dist_mat),
+                                        x_lim=(x_min, x_max),
+                                        y_lim=(y_min, y_max),
+                                        z_lim=(z_min, z_max))
+        return dist_image, dist_mat
+    
+    def px_to_xyz(self, px_data):
+        dist_mat = self.calculate_dist_mat()
+        return px_to_xyz(dist_mat, px_data)
+    
+    def transform_depth_to_color_frame(self, dist_mat):
+        extrinsics = rospy.wait_for_message(self.extrinsics_topic, Extrinsics)
+        dist_mat = transform_depth_to_color_frame(dist_mat, extrinsics)
+    
+    def detect_laptop_pose(self, x_min=-2, x_max=2, y_min=-2, y_max=2, z_min=0, z_max=4, draw_on=None):
+        dist_mat = self.calculate_dist_mat()
+        laptop_data_xyz, dist_image = detect_laptop_pose(dist_mat,
+         x_min, x_max, y_min, y_max, z_min, z_max, draw_on=draw_on)
+        return laptop_data_xyz, dist_image
+        
+
 
 def adjust_hole_center(image, hole_boxes):
     output = image.copy()

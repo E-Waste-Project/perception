@@ -5,7 +5,7 @@ from perception.coco_datasets import convert_format
 from perception.laptop_perception_helpers import plan_cover_cutting_path, interpolate_path,\
                                                  plan_port_cutting_path, filter_boxes_from_image,\
                                                  draw_lines, draw_boxes, box_near_by_dist, box_to_center,\
-                                                      correct_circles, get_intrinsics, calculate_dist_3D
+                                                      correct_circles, RealsenseHelpers
 from perception.msg import PerceptionData
 import sys
 import rospy
@@ -140,6 +140,17 @@ class Model:
         self.state = "capture" # if state == "flip" preserve the previous cpu screws
         self.create_frame_publisher = rospy.Publisher(
             "/create_frame_at_pose", PoseStamped, queue_size=1)
+
+        # Detect laptop pose parameters
+        self.cam_helpers = RealsenseHelpers()
+        self.trackbar_limits = {'x_min': 1802, 'x_max': 2212,
+                                'y_min': 0, 'y_max': 2125,
+                                'z_min': 249, 'z_max': 349}
+        self.limits = {}
+        for key, val in self.trackbar_limits.items():
+            self.limits[key] = 0.001 * val - 2
+            if key in ['z_min', 'z_max']:
+                self.limits[key] += 2
     
     def capture_callback(self, msg):
         # recieve state from messege
@@ -151,16 +162,15 @@ class Model:
         draw = True
 
         # Get laptop pose and flipping plan data
-        get_laptop_pose_msg = String()
-        get_laptop_pose_msg.data = "start"
-        self.get_laptop_pose_publisher.publish(get_laptop_pose_msg)
-        laptop_pose_msg = rospy.wait_for_message("/laptop_pose", Float32MultiArray)
+        laptop_pose_data = self.cam_helpers.detect_laptop_pose(x_min=self.limits['x_min'], x_max=self.limits['x_max'],
+                                                               y_min=self.limits['y_min'], y_max=self.limits['y_max'],
+                                                               z_min=self.limits['z_min'], z_max=self.limits['z_max'])
         laptop_data_pose_array = PoseArray()
-        for i in range(0, len(laptop_pose_msg.data), 3): # x, y, z for each point
+        for i in range(0, len(laptop_pose_data), 3): # x, y, z for each point
             pose = Pose()
-            pose.position.x = laptop_pose_msg.data[i]
-            pose.position.y = laptop_pose_msg.data[i+1]
-            pose.position.z = laptop_pose_msg.data[i+2]
+            pose.position.x = laptop_pose_data[i]
+            pose.position.y = laptop_pose_data[i+1]
+            pose.position.z = laptop_pose_data[i+2]
             pose.orientation.x = 0
             pose.orientation.y = 0
             pose.orientation.z = 0
