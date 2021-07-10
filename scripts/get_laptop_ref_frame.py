@@ -3,12 +3,12 @@ import cv2
 import rospy
 import numpy as np
 from sensor_msgs.msg import Image
-from sensor_msgs.msg import CameraInfo
 from copy import deepcopy
 import ros_numpy
 from std_msgs.msg import String, Float32MultiArray
 from realsense2_camera.msg import Extrinsics
-from perception.laptop_perception_helpers import detect_laptop, calculate_dist_3D, transform_depth_to_color_frame, constrain_environment
+from perception.laptop_perception_helpers import detect_laptop, calculate_dist_3D,\
+     transform_depth_to_color_frame, constrain_environment, get_intrinsics
     
     
 
@@ -59,21 +59,10 @@ class LaptopPoseDetector:
 
         cv2.destroyWindow(win_name)
     
-    def get_intrinsics(self):
-        intrinsics = {'fx': 0, 'fy': 0, 'px': 0, 'py': 0, 'w': 0, 'h': 0}
-        msg = rospy.wait_for_message("/camera/depth/camera_info", CameraInfo)
-        intrinsics['fx'] = msg.K[0]
-        intrinsics['fy'] = msg.K[4]
-        intrinsics['px'] = msg.K[2]
-        intrinsics['py'] = msg.K[5]
-        intrinsics['w'] = msg.width
-        intrinsics['h'] = msg.height
-        return intrinsics
-    
     def detect_pose(self):
         depth_img_msg = rospy.wait_for_message("/camera/depth/image_rect_raw", Image)
         depth_img = ros_numpy.numpify(depth_img_msg)
-        intrinsics = self.get_intrinsics()
+        intrinsics = get_intrinsics()
         dist_mat = calculate_dist_3D(depth_img, intrinsics)
         dist_mat = transform_depth_to_color_frame(dist_mat)
         dist_image = constrain_environment(deepcopy(dist_mat),

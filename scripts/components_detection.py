@@ -4,13 +4,15 @@ from perception.yolo_detector import Yolo
 from perception.coco_datasets import convert_format
 from perception.laptop_perception_helpers import plan_cover_cutting_path, interpolate_path,\
                                                  plan_port_cutting_path, filter_boxes_from_image,\
-                                                 draw_lines, draw_boxes, box_near_by_dist, box_to_center, correct_circles
+                                                 draw_lines, draw_boxes, box_near_by_dist, box_to_center,\
+                                                      correct_circles, get_intrinsics, calculate_dist_3D
 from perception.msg import PerceptionData
 import sys
 import rospy
 from sensor_msgs.msg import Image
 from std_msgs.msg import String
 from std_msgs.msg import Float32MultiArray
+from geometry_msgs.msg import Pose, PoseArray, PoseStamped
 from ros_numpy import numpify
 
 from math import sqrt
@@ -31,6 +33,7 @@ class Model:
                  image_topic='/camera/color/image_raw',
                  cutting_plan_topic='/cutting_path',
                  perception_data_topic='/perception_data',
+                 get_laptop_pose_topic='/get_laptop_pose',
                  imgsz=1280):
 
         self.model_type = model_type
@@ -129,22 +132,48 @@ class Model:
         self.cid_to_cthresh = {vals['id']: vals['thresh'] for cname,
                                vals in self.class_thresh.items()}
 
-        self.path_publisher = rospy.Publisher(cutting_plan_topic,
-                                              Float32MultiArray,
-                                              queue_size=1)
-        self.perception_data_publisher = rospy.Publisher(perception_data_topic,
-                                              PerceptionData,
-                                              queue_size=1)
-        self.state_publisher = rospy.Publisher(
-            "/found_components", String, queue_size=1)
+        self.path_publisher = rospy.Publisher(cutting_plan_topic, Float32MultiArray, queue_size=1)
+        self.perception_data_publisher = rospy.Publisher(perception_data_topic, PerceptionData, queue_size=1)
+        self.get_laptop_pose_publisher = rospy.Publisher(get_laptop_pose_topic, Float32MultiArray, queue_size=1)
+        self.state_publisher = rospy.Publisher("/found_components", String, queue_size=1)
         rospy.Subscriber("/capture_state", String, self.capture_callback)
+        self.state = "capture" # if state == "flip" preserve the previous cpu screws
+        self.create_frame_publisher = rospy.Publisher(
+            "/create_frame_at_pose", PoseStamped, queue_size=1)
     
     def capture_callback(self, msg):
+        # recieve state from messege
+        self.state = msg.data
+        
         # Recieve an image msg from camera topic, then, return image and detections.
         image, detections = self.recieve_and_detect()
 
         draw = True
+
+        # Get laptop pose and flipping plan data
+        get_laptop_pose_msg = String()
+        get_laptop_pose_msg.data = "start"
+        self.get_laptop_pose_publisher.publish(get_laptop_pose_msg)
+        laptop_pose_msg = rospy.wait_for_message("/laptop_pose", Float32MultiArray)
+        laptop_data_pose_array = PoseArray()
+        for i in range(0, len(laptop_pose_msg.data), 3): # x, y, z for each point
+            pose = Pose()
+            pose.position.x = laptop_pose_msg.data[i]
+            pose.position.y = laptop_pose_msg.data[i+1]
+            pose.position.z = laptop_pose_msg.data[i+2]
+            pose.orientation.x = 0
+            pose.orientation.y = 0
+            pose.orientation.z = 0
+            pose.orientation.w = 1
+            laptop_data_pose_array.poses.append(pose)
         
+        # Create/Update frame at the laptop center
+        frame_pose_msg = PoseStamped()
+        frame_pose_msg.pose = laptop_data_pose_array.poses[0]
+        frame_pose_msg.header.frame_id = "laptop"
+        self.create_frame_publisher.publish(frame_pose_msg)
+        _ = rospy.wait_for_message("/create_frame_at_pose_done", String)
+
         # Generate the cover cutting path, and screw holes from given detections and image to visulaise on.
         back_cover_cut_path, screw_holes = self.generate_cover_cutting_path(image, detections,
                                                                   min_screw_score=0,
@@ -172,13 +201,24 @@ class Model:
 
         # Generate the screws cut paths
         screws_cut_path = self.generate_rectangular_cutting_path(screw_holes, interpolate=False)
-        
+
         # Generate the screws_near_cpu cut paths
         screws_near_cpu_cut_path = self.generate_rectangular_cutting_path(self.screws_near_cpu, interpolate=False)
+
+        # Get 3D positions of the cpu screws cut path
+        # calculate_dist_3D()
+
+        # Transform cpu screws to be wrt laptop frame
+        # transformed_cpu_screws_path = []
+        # for cpu_screw_path in screws_near_cpu_cut_path:
+        #     pass
         
         # Construct perception_data msg.
         data_msg = PerceptionData()
         
+        # Add flipping and laptop pose data to the data_msg.
+        data_msg.flipping_points = laptop_data_pose_array
+
         # Add back cover cut path
         data_msg.back_cover_cut_path = self.construct_float_multi_array(back_cover_cut_path)
         for i in range(len(ports_cut_path)):

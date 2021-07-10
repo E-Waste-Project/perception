@@ -5,6 +5,7 @@ from copy import deepcopy
 from perception.coco_datasets import convert_format
 from math import fabs, sqrt, sin, cos, pi
 from realsense2_camera.msg import Extrinsics
+from sensor_msgs.msg import CameraInfo
 
 import ros_numpy
 import rospy
@@ -798,6 +799,17 @@ def plan_port_cutting_path(motherboard_coords, ports_coords, near_edge_dist, gro
         cut_paths.append([(x2, y), (x2, y2), (x, y2), (x, y)])
     
     return cut_paths            
+
+def get_intrinsics(intrinsics_topic="/camera/depth/camera_info"):
+    intrinsics = {'fx': 0, 'fy': 0, 'px': 0, 'py': 0, 'w': 0, 'h': 0}
+    msg = rospy.wait_for_message(intrinsics_topic, CameraInfo)
+    intrinsics['fx'] = msg.K[0]
+    intrinsics['fy'] = msg.K[4]
+    intrinsics['px'] = msg.K[2]
+    intrinsics['py'] = msg.K[5]
+    intrinsics['w'] = msg.width
+    intrinsics['h'] = msg.height
+    return intrinsics
 
 def calculate_dist_3D(depth_img, intrinsics):
     depth_img = depth_img * 0.001
