@@ -7,8 +7,7 @@ from copy import deepcopy
 import ros_numpy
 from std_msgs.msg import String, Float32MultiArray
 from realsense2_camera.msg import Extrinsics
-from perception.laptop_perception_helpers import detect_laptop, calculate_dist_3D,\
-     transform_depth_to_color_frame, constrain_environment, get_intrinsics
+from perception.laptop_perception_helpers import RealsenseHelpers, detect_laptop_pose
     
     
 
@@ -18,12 +17,15 @@ class LaptopPoseDetector:
         rospy.Subscriber("/get_laptop_pose", String, self.detect_pose_callback)
         self.img_publisher = rospy.Publisher("/img", Image, queue_size=1)
         self.laptop_pose_publisher = rospy.Publisher("/laptop_pose", Float32MultiArray, queue_size=1)
-        self.trackbar_limits = {'min_x': 1802, 'max_x': 2212,
-                                'min_y': 0   , 'max_y': 2125,
-                                'min_z': 2249, 'max_z': 2349}
+        self.trackbar_limits = {'x_min': 1802, 'x_max': 2212,
+                                'y_min': 0   , 'y_max': 2125,
+                                'z_min': 249, 'z_max': 349}
         self.limits = {}
         for key, val in self.trackbar_limits.items():
             self.limits[key] = 0.001* val - 2
+            if key in ['z_min', 'z_max']:
+                self.limits[key] += 2
+        self.cam_helpers = RealsenseHelpers()
         
     def _tune_pose_detector(self):
 
@@ -37,15 +39,18 @@ class LaptopPoseDetector:
             
             for key in self.trackbar_limits.keys():
                 self.limits[key] = (0.001 * cv2.getTrackbarPos(key, win_name) - 2)
-            
+                if key in ['z_min', 'z_max']:
+                    self.limits[key] += 2
             # color_img_msg = rospy.wait_for_message(
             #         "/camera/color/image_raw", Image)
             # color_img = ros_numpy.numpify(color_img_msg)
             # color_img = cv2.cvtColor(color_img, cv2.COLOR_BGR2RGB)
             # print("received Image")
-            dist_image, dist_mat = self.detect_pose()
-            color_dist_image = cv2.cvtColor(dist_image, cv2.COLOR_GRAY2BGR)
-            laptop_data_px = detect_laptop(dist_image, draw_on=color_dist_image)
+            dist_mat = self.cam_helpers.calculate_dist_mat()
+            laptop_data_px, dist_image = detect_laptop_pose(dist_mat, draw=True,
+                                                            x_min=self.limits['x_min'], x_max=self.limits['x_max'],
+                                                            y_min=self.limits['y_min'], y_max=self.limits['y_max'],
+                                                            z_min=self.limits['z_min'], z_max=self.limits['z_max'])
             
             # img_msg = ros_numpy.msgify(Image, color_img, encoding='bgr8')
             img_msg = ros_numpy.msgify(Image, dist_image, encoding='mono8')
@@ -54,36 +59,10 @@ class LaptopPoseDetector:
             # laptop_data_msg = rospy.wait_for_message("/laptop_data", Float32MultiArray) # center, flip_point
         
             # show converted depth image
-            cv2.imshow(win_name, color_dist_image)
+            cv2.imshow(win_name, dist_image)
             key = cv2.waitKey(10) & 0xFF
 
         cv2.destroyWindow(win_name)
-    
-    def detect_pose(self):
-        depth_img_msg = rospy.wait_for_message("/camera/depth/image_rect_raw", Image)
-        depth_img = ros_numpy.numpify(depth_img_msg)
-        intrinsics = get_intrinsics()
-        dist_mat = calculate_dist_3D(depth_img, intrinsics)
-        dist_mat = transform_depth_to_color_frame(dist_mat)
-        dist_image = constrain_environment(deepcopy(dist_mat),
-                                            x_lim=(self.limits['min_x'], self.limits['max_x']),
-                                            y_lim=(self.limits['min_y'], self.limits['max_y']),
-                                            z_lim=(self.limits['min_z'], self.limits['max_z']))
-        return dist_image, dist_mat
-    
-    def detect_pose_callback(self, msg):
-        dist_image, dist_mat = self.detect_pose()
-        laptop_data_px = detect_laptop(dist_image)
-        laptop_data_xyz = []
-        for i in range(0, len(laptop_data_px), 2):
-            x_px = laptop_data_px[i]
-            y_px = laptop_data_px[i+1]
-            xyz = dist_mat[:, y_px, x_px].tolist()
-            laptop_data_xyz.extend(xyz)
-        laptop_data_msg = Float32MultiArray()
-        laptop_data_msg.data = laptop_data_xyz
-        self.laptop_pose_publisher.publish(laptop_data_msg)
-        
 
 
 if __name__ == "__main__":
