@@ -5,7 +5,9 @@ from perception.coco_datasets import convert_format
 from perception.laptop_perception_helpers import plan_cover_cutting_path, interpolate_path,\
                                                  plan_port_cutting_path, filter_boxes_from_image,\
                                                  draw_lines, draw_boxes, box_near_by_dist, box_to_center,\
-                                                      correct_circles, RealsenseHelpers, detect_laptop_pose
+                                                 correct_circles, RealsenseHelpers, detect_laptop_pose
+from robot_helpers.srv import TransformPoses, TransformPosesRequest,\
+                              CreateFrameAtPose, CreateFrameAtPoseRequest
 from perception.msg import PerceptionData
 import sys
 import rospy
@@ -166,11 +168,13 @@ class Model:
         laptop_data_pose_array, dist_image = self.detect_laptop_pose_data_as_pose_array(draw=True)
         
         # Create/Update frame at the laptop center
-        frame_pose_msg = PoseStamped()
-        frame_pose_msg.pose = laptop_data_pose_array.poses[0]
-        frame_pose_msg.header.frame_id = "laptop"
-        self.create_frame_publisher.publish(frame_pose_msg)
-        _ = rospy.wait_for_message("/create_frame_at_pose_done", String)
+        frame_pose = laptop_data_pose_array.poses[0]
+        _ = rospy.wait_for_service("/create_frame_at_pose", CreateFrameAtPose)
+        try:
+            create_frame_at_pose = rospy.ServiceProxy('/create_frame_at_pose', CreateFrameAtPose)
+            _ = create_frame_at_pose(new_frame=String("laptop"), ref_frame=String("base_link"), frame_pose=frame_pose)
+        except rospy.ServiceException as e:
+            print("Creat Frame At Pose Service Failed : {}".format(e))
 
         # Generate the cover cutting path, and screw holes from given detections and image to visulaise on.
         back_cover_cut_path, screw_holes = self.generate_cover_cutting_path(image, detections,

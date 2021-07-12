@@ -15,7 +15,7 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
   geometry_msgs
   message_generation
-  cut_contour
+  robot_helpers
 )
 
 ## System dependencies are found with CMake's conventions
@@ -109,7 +109,7 @@ generate_messages(
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES perception
- CATKIN_DEPENDS roscpp rospy message_runtime cut_contour
+ CATKIN_DEPENDS roscpp rospy message_runtime robot_helpers
 #  DEPENDS system_lib
 )
 
