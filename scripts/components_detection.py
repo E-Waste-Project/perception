@@ -5,11 +5,12 @@ from perception.coco_datasets import convert_format
 from perception.laptop_perception_helpers import plan_cover_cutting_path, interpolate_path,\
                                                  plan_port_cutting_path, filter_boxes_from_image,\
                                                  draw_lines, draw_boxes, box_near_by_dist, box_to_center,\
-                                                      correct_circles, RealsenseHelpers
+                                                      correct_circles, RealsenseHelpers, detect_laptop_pose
 from perception.msg import PerceptionData
 import sys
 import rospy
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, CameraInfo
+from realsense2_camera.msg import Extrinsics
 from std_msgs.msg import String
 from std_msgs.msg import Float32MultiArray
 from geometry_msgs.msg import Pose, PoseArray, PoseStamped
@@ -161,21 +162,8 @@ class Model:
 
         draw = True
 
-        # Get laptop pose and flipping plan data
-        laptop_pose_data = self.cam_helpers.detect_laptop_pose(x_min=self.limits['x_min'], x_max=self.limits['x_max'],
-                                                               y_min=self.limits['y_min'], y_max=self.limits['y_max'],
-                                                               z_min=self.limits['z_min'], z_max=self.limits['z_max'])
-        laptop_data_pose_array = PoseArray()
-        for i in range(0, len(laptop_pose_data), 3): # x, y, z for each point
-            pose = Pose()
-            pose.position.x = laptop_pose_data[i]
-            pose.position.y = laptop_pose_data[i+1]
-            pose.position.z = laptop_pose_data[i+2]
-            pose.orientation.x = 0
-            pose.orientation.y = 0
-            pose.orientation.z = 0
-            pose.orientation.w = 1
-            laptop_data_pose_array.poses.append(pose)
+        # Get laptop pose and flipping plan data (laptop_center, flipping_point, upper_point)
+        laptop_data_pose_array, dist_image = self.detect_laptop_pose_data_as_pose_array(draw=True)
         
         # Create/Update frame at the laptop center
         frame_pose_msg = PoseStamped()
@@ -203,6 +191,7 @@ class Model:
         
         if draw:
             cv2.imshow("image_window", image)
+            cv2.imshow("depth_window", dist_image)
             key = cv2.waitKey(0) & 0xFF
             cv2.destroyWindow("image_window")
 
@@ -406,16 +395,31 @@ class Model:
         else:
             return boxes
         
-    def get_flipping_plan_data(self, detections):
-        box_cname = 'Laptop_Back_Cover'
-        # Get detected laptop_covers.
-        best_cover_box = self.get_class_detections(detections=detections,
-                                                   class_name=box_cname,
-                                                   best_only=True)
-        x, y, w, h = best_cover_box[0], best_cover_box[1], best_cover_box[2], best_cover_box[3]
-        flip_point = (x + w // 2, y + h)
-        arc_center_point = (x + w // 2, y)
-        return [flip_point, arc_center_point]
+    def detect_laptop_pose_data_as_pose_array(self, draw=False):
+        # Get current distances of all pixels from the depth image.
+        dist_mat = self.cam_helpers.get_dist_mat_from_cam(transform_to_color=True)
+        # Detect the laptop pose data (laptop_center, flipping_point, upper_point) as pixels
+        laptop_data_px, dist_image = detect_laptop_pose(dist_mat, draw=draw,
+                                                        x_min=self.limits['x_min'], x_max=self.limits['x_max'],
+                                                        y_min=self.limits['y_min'], y_max=self.limits['y_max'],
+                                                        z_min=self.limits['z_min'], z_max=self.limits['z_max'])
+        # Deproject the pixels representing laptop pose data to xyz 3d pose data. 
+        laptop_pose_data = self.cam_helpers.px_to_xyz(laptop_data_px, dist_mat=dist_mat)
+        
+        # Put the data in a PoseArray and return it
+        laptop_data_pose_array = PoseArray()
+        for i in range(0, len(laptop_pose_data), 3): # x, y, z for each point
+            pose = Pose()
+            pose.position.x = laptop_pose_data[i]
+            pose.position.y = laptop_pose_data[i+1]
+            pose.position.z = laptop_pose_data[i+2]
+            pose.orientation.x = 0
+            pose.orientation.y = 0
+            pose.orientation.z = 0
+            pose.orientation.w = 1
+            laptop_data_pose_array.poses.append(pose)
+            
+        return laptop_data_pose_array, dist_image
     
     def generate_rectangular_cutting_path(self, screw_boxes, interpolate=False, npoints=20):
         cut_boxes = []

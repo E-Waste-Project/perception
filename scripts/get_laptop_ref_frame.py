@@ -41,16 +41,22 @@ class LaptopPoseDetector:
                 self.limits[key] = (0.001 * cv2.getTrackbarPos(key, win_name) - 2)
                 if key in ['z_min', 'z_max']:
                     self.limits[key] += 2
+                    
             # color_img_msg = rospy.wait_for_message(
             #         "/camera/color/image_raw", Image)
             # color_img = ros_numpy.numpify(color_img_msg)
             # color_img = cv2.cvtColor(color_img, cv2.COLOR_BGR2RGB)
             # print("received Image")
-            dist_mat = self.cam_helpers.calculate_dist_mat()
-            laptop_data_px, dist_image = detect_laptop_pose(dist_mat, draw=True,
-                                                            x_min=self.limits['x_min'], x_max=self.limits['x_max'],
-                                                            y_min=self.limits['y_min'], y_max=self.limits['y_max'],
-                                                            z_min=self.limits['z_min'], z_max=self.limits['z_max'])
+            
+            # Get current distances of all pixels from the depth image.
+            dist_mat = self.cam_helpers.get_dist_mat_from_cam(transform_to_color=True)
+            # Detect the laptop pose data (laptop_center, flipping_point, upper_point) as pixels
+            laptop_data_px , dist_image = detect_laptop_pose(dist_mat, draw=True,
+                                                             x_min=self.limits['x_min'], x_max=self.limits['x_max'],
+                                                             y_min=self.limits['y_min'], y_max=self.limits['y_max'],
+                                                             z_min=self.limits['z_min'], z_max=self.limits['z_max'])
+            # Deproject the pixels representing laptop pose data to xyz 3d pose data. 
+            laptop_pose_data = self.cam_helpers.px_to_xyz(laptop_data_px, dist_mat=dist_mat)
             
             # img_msg = ros_numpy.msgify(Image, color_img, encoding='bgr8')
             img_msg = ros_numpy.msgify(Image, dist_image, encoding='mono8')
