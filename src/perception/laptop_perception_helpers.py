@@ -6,6 +6,7 @@ from perception.coco_datasets import convert_format
 from math import fabs, sqrt, sin, cos, pi
 from realsense2_camera.msg import Extrinsics
 from sensor_msgs.msg import CameraInfo, Image
+from geometry_msgs.msg import PoseArray, Pose
 
 import ros_numpy
 import rospy
@@ -832,6 +833,21 @@ def detect_laptop_pose(dist_mat, x_min=-2, x_max=2, y_min=-2, y_max=2, z_min=0, 
     laptop_data_px = detect_laptop(dist_image, draw_on=draw_on)
     return laptop_data_px, dist_image
 
+
+def xyz_list_to_pose_array(xyz_list):
+    pose_array = PoseArray()
+    for i in range(0, len(xyz_list), 3): # x, y, z for each point
+        pose = Pose()
+        pose.position.x = xyz_list[i]
+        pose.position.y = xyz_list[i+1]
+        pose.position.z = xyz_list[i+2]
+        pose.orientation.x = 0
+        pose.orientation.y = 0
+        pose.orientation.z = 0
+        pose.orientation.w = 1
+        pose_array.poses.append(pose)
+    return pose_array
+
 class RealsenseHelpers():
     def __init__(self, raw_depth=True):
         if raw_depth:
@@ -842,15 +858,23 @@ class RealsenseHelpers():
             self.intrinsics_topic = "/camera/color/camera_info"
         self.extrinsics_topic = "/camera/extrinsics/depth_to_color"
     
-    def px_to_xyz(self, px_data, depth_img=None, intrinsics=None, dist_mat=None):
+    def px_to_xyz(self, px_data, depth_img=None, intrinsics=None, dist_mat=None, format='list'):
         if dist_mat is None:
             dist_mat = self.calculate_dist_3D(depth_img, intrinsics)
         data_xyz = []
-        for i in range(0, len(px_data), 2):
-            x_px = px_data[i]
-            y_px = px_data[i+1]
+        i = 0    
+        while True:
+            if format == 'list_of_tubles':
+                x_px, y_px = px_data[i]
+                i += 1
+            else:
+                x_px = px_data[i]
+                y_px = px_data[i+1]
+                i += 2
             xyz = dist_mat[:, y_px, x_px].tolist()
             data_xyz.extend(xyz)
+            if i >= (len(px_data)-1):
+                break
         return data_xyz
     
     def transform_depth_to_color_frame(self, dist_mat, extrinsics):
