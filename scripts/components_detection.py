@@ -266,8 +266,9 @@ class Model:
         data_msg.cpu = self.get_detection_as_msg(detections=detections, class_name="CPU", best_only=False)
         
         # Add detected motherboard.
-        data_msg.motherboard = self.get_detection_as_msg(detections=detections, class_name="Motherboard", best_only=True)
-
+        # data_msg.motherboard = self.get_detection_as_msg(detections=detections, class_name="Motherboard", best_only=True)
+        mother_picking_point = self.free_areas_detection(detections=detections, img=image, tol=20, draw=draw)
+        data_msg.motherboard = self.construct_float_multi_array(path_points=[mother_picking_point])
         
         
         components_msg = String()
