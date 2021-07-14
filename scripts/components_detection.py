@@ -7,7 +7,7 @@ from perception.laptop_perception_helpers import plan_cover_cutting_path, interp
                                                  draw_lines, draw_boxes, box_near_by_dist, box_to_center,\
                                                 correct_circles, RealsenseHelpers, detect_laptop_pose,\
                                                      xyz_list_to_pose_array
-from robot_helpers.srv import TransformPoses, TransformPosesRequest,\
+from robot_helpers.srv import TransformPoses, TransformPosesRequest, TransformPosesResponse,\
                               CreateFrameAtPose, CreateFrameAtPoseRequest
 from perception.msg import PerceptionData
 import sys
@@ -220,8 +220,9 @@ class Model:
                 transformation_data = {'ref_frame': String('calibrated_frame'),
                                     'target_frame':String('laptop'),
                                     'poses_to_transform': cpu_screws_as_pose_array}
-                cpu_screw_transformed = self.service_req("/transform_poses", TransformPoses, 
+                response = self.service_req("/transform_poses", TransformPoses, 
                                                             inputs=transformation_data)
+                cpu_screw_transformed = response.transformed_poses
                 self.screws_near_cpu_cut_path.append(cpu_screw_transformed)
         
         # Construct perception_data msg.
