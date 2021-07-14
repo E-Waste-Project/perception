@@ -151,7 +151,7 @@ class Model:
         self.cam_helpers = RealsenseHelpers()
         self.trackbar_limits = {'x_min': 1802, 'x_max': 2212,
                                 'y_min': 0, 'y_max': 2125,
-                                'z_min': 249, 'z_max': 349}
+                                'z_min': 249, 'z_max': 340}
         self.limits = {}
         for key, val in self.trackbar_limits.items():
             self.limits[key] = 0.001 * val - 2
@@ -161,14 +161,15 @@ class Model:
     def capture_callback(self, msg):
         # recieve state from messege
         self.state = msg.data
-        
-        # Recieve an image msg from camera topic, then, return image and detections.
-        image, detections = self.recieve_and_detect()
-
+        yolo_draw = False
+        depth_draw = True
         draw = True
+        # Recieve an image msg from camera topic, then, return image and detections.
+        image, detections = self.recieve_and_detect(draw=yolo_draw)
+
 
         # Get laptop pose and flipping plan data (laptop_center, flipping_point, upper_point)
-        laptop_data_pose_array, dist_image, dist_mat = self.detect_laptop_pose_data_as_pose_array(draw=True)
+        laptop_data_pose_array, dist_mat, dist_image = self.detect_laptop_pose_data_as_pose_array(draw=depth_draw)
         
         # Create/Update frame at the laptop center
         frame_pose = laptop_data_pose_array.poses[0]
@@ -180,7 +181,7 @@ class Model:
                                                                   min_screw_score=0,
                                                                   tol=20, method=1, min_hole_dist=10, hole_tol=0,  # generated path params
                                                                   return_holes_inside_cut_path=False,
-                                                                  filter_screws=True,
+                                                                  filter_screws=False,
                                                                   draw=draw)
         
         # Filter screws near the cpu and add them to self.screws_near_cpu
@@ -192,12 +193,13 @@ class Model:
         
         # Generate the cover cutting path, and screw holes from given detections and image to visulaise on.
         ports_cut_path = self.generate_ports_cutting_path(image, detections, draw=draw)
-        
-        if draw:
+        key = 0
+        if draw or yolo_draw or depth_draw:
             cv2.imshow("image_window", image)
             cv2.imshow("depth_window", dist_image)
             key = cv2.waitKey(0) & 0xFF
             cv2.destroyWindow("image_window")
+            cv2.destroyWindow("depth_window")
 
         if key == ord('e'):
             return
@@ -208,16 +210,15 @@ class Model:
         if self.state != 'capture cpu screws':
             # Generate the screws_near_cpu cut paths
             screws_near_cpu_cut_path_px = self.generate_rectangular_cutting_path(self.screws_near_cpu, interpolate=False)
-
             # Get 3D positions of the cpu screws cut path
             for screw in screws_near_cpu_cut_path_px:
                 cpu_screws_as_xyz_list = self.cam_helpers.px_to_xyz(dist_mat=dist_mat, 
                                                                     px_data=screw,
-                                                                    format='list_of_tuples')
+                                                                    px_data_format='list_of_tuples')
                 cpu_screws_as_pose_array = xyz_list_to_pose_array(cpu_screws_as_xyz_list)
                 # Transform cpu screws to be wrt laptop frame
-                transformation_data = {'ref_fram': 'calibrated_frame',
-                                    'target_frame':'laptop',
+                transformation_data = {'ref_frame': String('calibrated_frame'),
+                                    'target_frame':String('laptop'),
                                     'poses_to_transform': cpu_screws_as_pose_array}
                 cpu_screw_transformed = self.service_req("/transform_poses", TransformPoses, 
                                                             inputs=transformation_data)
@@ -238,10 +239,9 @@ class Model:
         # Add screws centers.
         screw_boxes = [box_to_center(sb) for sb in screw_holes]
         data_msg.screws = self.construct_float_multi_array(screw_boxes)
-        
+
         # Add cpu screws
-        cpu_screw_boxes = []
-        [cpu_screw_boxes.append((x, y)) for sb in self.screws_near_cpu for x, y in box_to_center(sb)]
+        cpu_screw_boxes = [box_to_center(sb) for sb in self.screws_near_cpu]
         data_msg.screws_near_cpu = self.construct_float_multi_array(cpu_screw_boxes)
         
         # Add screws cut path
@@ -324,7 +324,7 @@ class Model:
         detections['detection_scores'] = np.delete(
             detections['detection_scores'], indicies_to_remove)
 
-    def recieve_and_detect(self, read_img=False, image_path=None):
+    def recieve_and_detect(self, read_img=False, image_path=None, draw=False):
         # Either read image from path or wait for ros message
         if image_path is not None and read_img:
             image_np = cv2.imread(image_path)
@@ -352,7 +352,7 @@ class Model:
         
         self.image = image_np
         # Run forward prop of model to get the detections.
-        detections = self.detect_fn(image_np)
+        image_np, detections = self.detect_fn(image_np, draw=draw)
 
         # detection_classes should be ints.
         detections['detection_classes'] = detections['detection_classes'].astype(
@@ -406,7 +406,10 @@ class Model:
             return best_box
         else:
             return boxes
-        
+    
+    def free_areas_detection(self,detections, img):
+        pass
+    
     def detect_laptop_pose_data_as_pose_array(self, draw=False):
         # Get current distances of all pixels from the depth image.
         dist_mat = self.cam_helpers.get_dist_mat_from_cam(transform_to_color=True)
@@ -421,7 +424,7 @@ class Model:
         # Put the data in a PoseArray and return it
         laptop_data_pose_array = xyz_list_to_pose_array(laptop_pose_data)
             
-        return laptop_data_pose_array, dist_image, dist_mat
+        return laptop_data_pose_array, dist_mat, dist_image
     
     def generate_rectangular_cutting_path(self, screw_boxes, interpolate=False, npoints=20):
         cut_boxes = []
@@ -489,6 +492,7 @@ class Model:
         self.screws_near_cpu = list(filter(lambda box: box_near_by_dist(box, cpu_boxes, dist_as_side_ratio), screws))
         
         if draw and image is not None:
+            draw_boxes(image, cpu_boxes,  draw_center=True, color=(255, 0, 0))
             draw_boxes(image, self.screws_near_cpu, draw_center=True, color=(0, 0, 255))
         
         screws = [box for box in screws if box not in self.screws_near_cpu]
@@ -585,14 +589,14 @@ class Model:
         path_msg = self.construct_float_multi_array(cut_path)
         self.path_publisher.publish(path_msg)
     
-    def service_req(self, name, type, **inputs):
-        _ = rospy.wait_for_service(name, type)
+    def service_req(self, name, service_type, **inputs):
+        _ = rospy.wait_for_service(name)
         try:
-            callable_service_func = rospy.ServiceProxy(name, type)
-            response = callable_service_func(**inputs)
+            callable_service_func = rospy.ServiceProxy(name, service_type)
+            response = callable_service_func(**inputs['inputs'])
             return response
         except rospy.ServiceException as e:
-            print("Creat Frame At Pose Service Failed : {}".format(e))
+            print("Service Failed : {}".format(e))
 
 
 if __name__ == "__main__":

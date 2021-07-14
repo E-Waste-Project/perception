@@ -126,7 +126,7 @@ def point_near_box_by_dist(point, box, dist_as_side_ratio=0.5):
         x, y = point[0], point[1]
         x1, y1, w1, h1 = box[0], box[1], box[2], box[3]
         x2, y2 = x1 + w1, y1 + h1
-        xc, yc = x1 + w1 // 2, y1 + w1 // 2
+        xc, yc = x1 + w1 // 2, y1 + h1 // 2
         if fabs(xc - x) <= w1*dist_as_side_ratio and fabs(yc - y) <= h1*dist_as_side_ratio:
             return True
         else:
@@ -191,7 +191,7 @@ def preprocess(input_img, median_sz=12, gauss_kernel=21, clahe_kernel=2,
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(clahe_kernel, clahe_kernel))
     output_img = clahe.apply(input_img)
 
-    output_img = cv2.medianBlur(output_img, median_sz)
+    output_img = cv2.medianBlur(output_img, ksize=median_sz)
     
     output_img = cv2.GaussianBlur(output_img, (gauss_kernel, gauss_kernel), 0)
     
@@ -224,7 +224,7 @@ def filter_contours(input_contours, sorting_key, min_val=None, max_val=None, rev
     return filtered_contours
 
 
-def detect_laptop(input_img, draw_on=None):
+def detect_laptop(input_img, draw_on=None, **kwargs):
     # Takes gray_scale img, returns rect values of detected laptop.
 
     min_len = 200000
@@ -232,8 +232,8 @@ def detect_laptop(input_img, draw_on=None):
     k = 1
     median_sz = 23
     c = 2
-    morph_kernel=1
-    iterations=1
+    morph_kernel=59
+    iterations=2
     
     preprocessed_img = preprocess(input_img, median_sz=median_sz, gauss_kernel=k, clahe_kernel=c,
                                   morph_kernel=morph_kernel, iterations=iterations, dilate=False)
@@ -829,7 +829,7 @@ def detect_laptop_pose(dist_mat, x_min=-2, x_max=2, y_min=-2, y_max=2, z_min=0, 
                                        z_lim=(z_min, z_max))
     
     color_img = cv2.cvtColor(dist_image, cv2.COLOR_GRAY2BGR)
-    draw_on = dist_image if draw else None
+    draw_on = color_img if draw else None
     laptop_data_px = detect_laptop(dist_image, draw_on=draw_on)
     return laptop_data_px, color_img
 
@@ -858,22 +858,24 @@ class RealsenseHelpers():
             self.intrinsics_topic = "/camera/color/camera_info"
         self.extrinsics_topic = "/camera/extrinsics/depth_to_color"
     
-    def px_to_xyz(self, px_data, depth_img=None, intrinsics=None, dist_mat=None, format='list'):
+    def px_to_xyz(self, px_data, depth_img=None, intrinsics=None, dist_mat=None, px_data_format='list'):
         if dist_mat is None:
             dist_mat = self.calculate_dist_3D(depth_img, intrinsics)
         data_xyz = []
         i = 0    
         while True:
-            if format == 'list_of_tubles':
+            if px_data_format == 'list_of_tuples':
                 x_px, y_px = px_data[i]
                 i += 1
             else:
                 x_px = px_data[i]
                 y_px = px_data[i+1]
                 i += 2
+            
+
             xyz = dist_mat[:, y_px, x_px].tolist()
             data_xyz.extend(xyz)
-            if i >= (len(px_data)-1):
+            if i >= (len(px_data)):
                 break
         return data_xyz
     

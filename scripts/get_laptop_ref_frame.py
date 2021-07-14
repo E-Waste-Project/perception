@@ -14,12 +14,12 @@ from perception.laptop_perception_helpers import RealsenseHelpers, detect_laptop
 class LaptopPoseDetector:
     def __init__(self):
         self.aligned_depth_img = None
-        rospy.Subscriber("/get_laptop_pose", String, self.detect_pose_callback)
+        # rospy.Subscriber("/get_laptop_pose", String, self.detect_pose_callback)
         self.img_publisher = rospy.Publisher("/img", Image, queue_size=1)
-        self.laptop_pose_publisher = rospy.Publisher("/laptop_pose", Float32MultiArray, queue_size=1)
+        # self.laptop_pose_publisher = rospy.Publisher("/laptop_pose", Float32MultiArray, queue_size=1)
         self.trackbar_limits = {'x_min': 1802, 'x_max': 2212,
                                 'y_min': 0   , 'y_max': 2125,
-                                'z_min': 249, 'z_max': 349}
+                                'z_min': 249, 'z_max': 340}
         self.limits = {}
         for key, val in self.trackbar_limits.items():
             self.limits[key] = 0.001* val - 2
@@ -52,18 +52,19 @@ class LaptopPoseDetector:
             dist_mat = self.cam_helpers.get_dist_mat_from_cam(transform_to_color=True)
             # Detect the laptop pose data (laptop_center, flipping_point, upper_point) as pixels
             laptop_data_px , dist_image = detect_laptop_pose(dist_mat, draw=True,
-                                                             x_min=self.limits['x_min'], x_max=self.limits['x_max'],
-                                                             y_min=self.limits['y_min'], y_max=self.limits['y_max'],
-                                                             z_min=self.limits['z_min'], z_max=self.limits['z_max'])
-            # Deproject the pixels representing laptop pose data to xyz 3d pose data. 
-            laptop_pose_data = self.cam_helpers.px_to_xyz(laptop_data_px, dist_mat=dist_mat)
+                                                                x_min=self.limits['x_min'], x_max=self.limits['x_max'],
+                                                                y_min=self.limits['y_min'], y_max=self.limits['y_max'],
+                                                                z_min=self.limits['z_min'], z_max=self.limits['z_max'])
+            if laptop_data_px is not None:
+                # Deproject the pixels representing laptop pose data to xyz 3d pose data. 
+                laptop_pose_data = self.cam_helpers.px_to_xyz(laptop_data_px, dist_mat=dist_mat)
+                print(dist_image.shape)
+                img_msg = ros_numpy.msgify(Image, dist_image, encoding='bgr8')
+                # img_msg = ros_numpy.msgify(Image, dist_image, encoding='mono8')
+                
+                self.img_publisher.publish(img_msg)
+                # laptop_data_msg = rospy.wait_for_message("/laptop_data", Float32MultiArray) # center, flip_point
             
-            # img_msg = ros_numpy.msgify(Image, color_img, encoding='bgr8')
-            img_msg = ros_numpy.msgify(Image, dist_image, encoding='mono8')
-
-            self.img_publisher.publish(img_msg)
-            # laptop_data_msg = rospy.wait_for_message("/laptop_data", Float32MultiArray) # center, flip_point
-        
             # show converted depth image
             cv2.imshow(win_name, dist_image)
             key = cv2.waitKey(10) & 0xFF

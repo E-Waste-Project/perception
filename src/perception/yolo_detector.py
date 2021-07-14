@@ -108,7 +108,7 @@ class Yolo:
             if draw:
                 return im0, detections
             else:
-                return detections
+                return input_img, detections
 
 
 
