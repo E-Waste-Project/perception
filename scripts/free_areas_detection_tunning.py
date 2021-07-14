@@ -5,17 +5,14 @@ from __future__ import division
 import cv2
 import numpy as np
 from bisect import bisect_right, bisect_left
-from perception.laptop_perception_helpers import read_and_resize, enclosing_rect_area
+from perception.laptop_perception_helpers import euclidean_dist, read_and_resize, enclosing_rect_area, euclidean_dist_array, scale_contour
 import rospy
 from sensor_msgs.msg import Image
-from std_msgs.msg import Float32MultiArray
 import ros_numpy
-from math import atan2, cos, sin, sqrt, pi
 
 
-rospy.init_node("laptop_detection_tuning")
+rospy.init_node("free_area_tunning")
 rospy.sleep(1)
-laptop_data_publisher = rospy.Publisher("/laptop_data", Float32MultiArray, queue_size=1)
 
 read_img = False
 
@@ -35,7 +32,7 @@ cv2.namedWindow("image_window")
 cv2.namedWindow("output_window")
 
 # Parmaeters to tune
-min_len = 200000
+min_len = 0
 # min_len = 0
 max_len = 500000
 # min_circ = 76
@@ -43,7 +40,7 @@ use_canny = False
 thresh1 = 34
 thresh2 = 0
 # morph_kernel = 3
-morph_kernel = 59
+morph_kernel = 1
 # k = 15
 k = 23
 c = 2
@@ -65,11 +62,14 @@ cv2.createTrackbar('epsilon', 'output_window', eps, 1000, lambda x: None)
 # cv2.createTrackbar('min_circ', 'output_window', min_circ, 100, nothing)
 
 # ========================================================================== #
-
+loop = True
+recieved_img = False
 while True:
     if not read_img:
-        msg = rospy.wait_for_message("/img", Image)
-        original_img = ros_numpy.numpify(msg)
+        if (loop and not recieved_img) or not loop:
+            msg = rospy.wait_for_message("/free_area_tunning", Image)
+            original_img = ros_numpy.numpify(msg)
+            recieved_img = True
     
     if original_img.shape[-1] == 3:
         gray = cv2.cvtColor(original_img, cv2.COLOR_BGR2GRAY)
@@ -143,67 +143,27 @@ while True:
     contours.reverse()
 
     # cv2.drawContours(img, contours, -1, (0, 255, 0), 3)
-
+    filled_cnt_img = np.zeros(output.shape)
     if len(contours) > 0:
-        x, y, w, h = cv2.boundingRect(contours[0])
-        cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)
         cnt = contours[0]
-        
-        # Find the convex hull object for each contour
-        hull_list = [cv2.convexHull(cnt)]
-        hll = hull_list[0]
-        leftmost = tuple(hll[hll[:,:,0].argmin()][0])
-        rightmost = tuple(hll[hll[:,:,0].argmax()][0])
-        topmost = tuple(hll[hll[:,:,1].argmin()][0])
-        bottommost = tuple(hll[hll[:,:,1].argmax()][0])
-        cv2.circle(img, leftmost, 5, color=(255, 0, 0), thickness=-1)
-        cv2.circle(img, rightmost, 5, color=(255, 0, 0), thickness=-1)
-        cv2.circle(img, topmost, 5, color=(255, 0, 0), thickness=-1)
-        cv2.circle(img, bottommost, 5, color=(255, 0, 0), thickness=-1)
-        epsilon = eps*cv2.arcLength(hull_list[0],True)
-        approx = cv2.approxPolyDP(hull_list[0],epsilon,True)
-        rect = cv2.minAreaRect(hull_list[0])
-        box = cv2.boxPoints(rect)
-        box = np.int0(box)
-        
-        # Retrieve the key parameters of the rotated bounding box
-        center = (int(rect[0][0]),int(rect[0][1])) 
-        width = int(rect[1][0])
-        height = int(rect[1][1])
-        angle = int(rect[2])
-
-        if width < height:
-            angle = 90 - angle
-            nw = (width // 2) * sin(angle * pi / 180)
-            nh = (width // 2) * cos(angle * pi / 180)
-            flip_radius = width
-        else:
-            angle = -angle
-            nw = (height // 2) * sin(angle * pi / 180)
-            nh = (height // 2) * cos(angle * pi / 180)
-            flip_radius = height
-        
-        flip_point = (int(center[0] + nw), int(center[1] + nh))
-        upper_point = (int(center[0] + nw), int(center[1] - nh))
-        label = "  Rotation Angle: " + str(angle) + " degrees"
-        textbox = cv2.rectangle(img, (center[0]-35, center[1]-25), 
-            (center[0] + 295, center[1] + 10), (255,255,255), -1)
-        cv2.putText(img, label, (center[0]-50, center[1]), 
-            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,0,0), 1, cv2.LINE_AA)
-        cv2.drawContours(img, [cnt], 0, (0, 0, 255), 2)
-        cv2.drawContours(img, [approx], 0, (0, 255, 255), 2)
-        cv2.drawContours(img, [box], 0, (255, 255, 0), 2)
+        cnt = scale_contour(cnt, 0.8)
+        x, y, w, h = cv2.boundingRect(cnt)
+        cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        cv2.drawContours(img, [cnt], 0, (255, 0, 0), 2)
+        cv2.drawContours(filled_cnt_img, [cnt], 0, (255, 255, 255), thickness=-1)
         cv2.circle(img, (x + w//2, y + h//2), 5, color=(0, 255, 0), thickness=2)
-        cv2.circle(img, center, 10, color=(255, 0, 0), thickness=2)
-        cv2.circle(img, flip_point, 20, color=(0, 255, 0), thickness=-1)
-        cv2.line(img, upper_point, flip_point, color=(0, 255, 0), thickness=2)
-        laptop_data_msg = Float32MultiArray()
-        laptop_data_msg.data = [center[0], center[1], flip_point[0], flip_point[1], flip_radius]
-        laptop_data_publisher.publish(laptop_data_msg)
+        y = np.where(filled_cnt_img > 0) 
+        candidate_points = filled_cnt_img[y]
+        points_indices = np.row_stack(y).T
+        point = np.array([output.shape[0] // 2, output.shape[1] // 2])
+        point_nearest_to_motherboard_center = np.argmin(euclidean_dist_array(points_indices, point))
+        py, px = y[0][point_nearest_to_motherboard_center], y[1][point_nearest_to_motherboard_center]
+        cv2.circle(img, (px, py), 5, color=(0, 0, 255), thickness=-1)
+        cv2.circle(img, (point[1], point[0]), 10, color=(0, 255, 0), thickness=2)
     # ========================================================= #
 
     cv2.imshow("output_window", output)
-    # cv2.imshow("thresh_window", thresh)
+    cv2.imshow("filled_contour_window", filled_cnt_img)
     cv2.imshow("image_window", img)
 
     key = cv2.waitKey(20) & 0xFF

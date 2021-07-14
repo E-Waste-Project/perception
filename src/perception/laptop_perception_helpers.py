@@ -96,6 +96,24 @@ def euclidean_dist(point1, point2):
     for p1, p2 in zip(point1, point2):
         diff_sq += (p1 - p2)**2
     return sqrt(diff_sq)
+
+def euclidean_dist_array(points, point):
+    x_diff = points[:, 0] - point[0]
+    y_diff = points[:, 1] - point[1]
+    return np.sqrt(x_diff**2 + y_diff**2)
+
+def scale_contour(cnt, scale):
+    M = cv2.moments(cnt)
+    cx = int(M['m10']/M['m00'])
+    cy = int(M['m01']/M['m00'])
+
+    cnt_norm = cnt - [cx, cy]
+    cnt_scaled = cnt_norm * scale
+    cnt_scaled = cnt_scaled + [cx, cy]
+    cnt_scaled = cnt_scaled.astype(np.int32)
+
+    return cnt_scaled
+
 def read_and_resize(directory, img_id, size=(720, 480), compression='.jpg'):
     read_img = cv2.imread(directory + str(img_id) + compression)
     if size is not None:
@@ -185,9 +203,18 @@ def filter_boxes_from_image(boxes, image, window_name, create_new_window=True):
     return filtered_boxes
 
 
-def preprocess(input_img, median_sz=12, gauss_kernel=21, clahe_kernel=2,
-               morph_kernel=3, iterations=3, dilate=False, use_canny=False, thresh1=42, thresh2=111):
+def preprocess(input_img, **kwargs):
     # Contrast Norm + Gauss Blur + Adaptive Threshold + Dilation + Canny
+    median_sz=kwargs.get('median_sz', 12)
+    gauss_kernel = kwargs.get('gauss_kernel', 21)
+    clahe_kernel = kwargs.get('clahe_kernel', 2)
+    morph_kernel = kwargs.get('morph_kernel', 3)
+    iterations = kwargs.get('iterations', 3)
+    dilate = kwargs.get('dilate', False)
+    use_canny = kwargs.get('use_canny', False)
+    thresh1 = kwargs.get('thresh1', 42)
+    thresh2 = kwargs.get('thresh2', 111)
+
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(clahe_kernel, clahe_kernel))
     output_img = clahe.apply(input_img)
 
@@ -208,9 +235,15 @@ def preprocess(input_img, median_sz=12, gauss_kernel=21, clahe_kernel=2,
     return output_img
 
 
-def filter_contours(input_contours, sorting_key, min_val=None, max_val=None, reverse=False):
+def filter_contours(input_contours, **kwargs):
+    sorting_key=kwargs.get('sorting_key', None)
+    min_val = kwargs.get('min_val', None)
+    max_val = kwargs.get('max_val', None)
+    reverse = kwargs.get('reverse', False)
+
     sorted_contours = sorted(input_contours, key=sorting_key, reverse=reverse)
-    contours_feature = list(map(sorting_key, sorted_contours))
+    if sorting_key is not None:
+        contours_feature = list(map(sorting_key, sorted_contours))
     start = 0
     if min_val is not None:
         start = bisect_left(contours_feature, min_val)
@@ -224,24 +257,31 @@ def filter_contours(input_contours, sorting_key, min_val=None, max_val=None, rev
     return filtered_contours
 
 
-def detect_laptop(input_img, draw_on=None, **kwargs):
+def find_contours(input_img, **kwargs):
     # Takes gray_scale img, returns rect values of detected laptop.
-
-    min_len = 200000
-    max_len = 500000
-    k = 1
-    median_sz = 23
-    c = 2
-    morph_kernel=59
-    iterations=2
-    
-    preprocessed_img = preprocess(input_img, median_sz=median_sz, gauss_kernel=k, clahe_kernel=c,
-                                  morph_kernel=morph_kernel, iterations=iterations, dilate=False)
+    preprocessed_img = preprocess(input_img, **kwargs)
 
     all_contours, hierarchy = cv2.findContours(preprocessed_img, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
 
-    filtered_contours = filter_contours(all_contours, sorting_key=enclosing_rect_area,
-                                        min_val=min_len, max_val=max_len, reverse=False)
+    filtered_contours = filter_contours(all_contours, **kwargs)
+    return filtered_contours
+
+
+def detect_laptop(input_img, draw_on=None, **kwargs):
+    # Takes gray_scale img, returns rect values of detected laptop.
+
+    kwargs={'min_val' : 200000,
+    'max_val' : 500000,
+    'gauss_kernel' : 1,
+    'median_sz' : 23,
+    'clahe_kernel' : 2,
+    'morph_kernel':59,
+    'iterations':2,
+    'dilate':False,
+    'reverse':False,
+    'sorting_key':enclosing_rect_area}
+    
+    filtered_contours = find_contours(input_img, **kwargs)
     
     if len(filtered_contours) > 0:
         cnt = filtered_contours[0]
@@ -276,6 +316,41 @@ def detect_laptop(input_img, draw_on=None, **kwargs):
         return laptop_data
     else:
         return None
+
+
+def detect_picking_point(input_img, center, draw_on=None):
+    # Takes gray_scale img, returns rect values of detected laptop.
+
+    kwargs={'min_val' : 0,
+    'max_val' : 500000,
+    'gauss_kernel' : 1,
+    'median_sz' : 23,
+    'clahe_kernel' : 2,
+    'morph_kernel':1,
+    'iterations':1,
+    'dilate':False,
+    'reverse':False,
+    'sorting_key':enclosing_rect_area}
+    
+    filtered_contours = find_contours(input_img, **kwargs)
+
+    filled_cnt_img = np.zeros(input_img.shape)
+    cnt = filtered_contours[0]
+    scaled_cnt = scale_contour(cnt, 0.8)
+    x, y, w, h = cv2.boundingRect(cnt)
+    cv2.rectangle(draw_on, (x, y), (x + w, y + h), (0, 255, 0), 2)
+    cv2.drawContours(draw_on, [cnt], 0, (255, 0, 0), 2)
+    cv2.drawContours(filled_cnt_img, [scaled_cnt], 0, (255, 255, 255), thickness=-1)
+    cv2.circle(draw_on, (x + w//2, y + h//2), 5, color=(0, 255, 0), thickness=2)
+    y = np.where(filled_cnt_img > 0) 
+    points_indices = np.row_stack(y).T
+    # point = np.array([input_img.shape[0] // 2, input_img.shape[1] // 2])
+    point = np.array([center[0], center[1]])
+    point_nearest_to_motherboard_center = np.argmin(euclidean_dist_array(points_indices, point))
+    py, px = y[0][point_nearest_to_motherboard_center], y[1][point_nearest_to_motherboard_center]
+    cv2.circle(draw_on, (px, py), 5, color=(0, 0, 255), thickness=-1)
+    cv2.circle(draw_on, (point[1], point[0]), 10, color=(0, 255, 0), thickness=2)
+    return (px, py)
 
 
 def detect_holes(input_img, draw_on=None):

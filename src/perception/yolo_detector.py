@@ -13,7 +13,7 @@ from numpy import random
 
 class Yolo:
 
-    def __init__(self, weights, imgsz, conf_thres=0.25, iou_thres=0.45, classes=None, agnostic_nms=False):
+    def __init__(self, weights, imgsz, conf_thres=0.2, iou_thres=0.45, classes=None, agnostic_nms=False):
         self.conf_thres, self.iou_thres, self.classes = conf_thres, iou_thres, classes
         self.agnostic_nms = agnostic_nms
         # Initialize

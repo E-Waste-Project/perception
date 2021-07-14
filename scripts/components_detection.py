@@ -2,25 +2,22 @@
 import cv2
 from perception.yolo_detector import Yolo
 from perception.coco_datasets import convert_format
-from perception.laptop_perception_helpers import plan_cover_cutting_path, interpolate_path,\
+from perception.laptop_perception_helpers import detect_picking_point, plan_cover_cutting_path, interpolate_path,\
                                                  plan_port_cutting_path, filter_boxes_from_image,\
                                                  draw_lines, draw_boxes, box_near_by_dist, box_to_center,\
                                                 correct_circles, RealsenseHelpers, detect_laptop_pose,\
                                                      xyz_list_to_pose_array
-from robot_helpers.srv import TransformPoses, TransformPosesRequest, TransformPosesResponse,\
-                              CreateFrameAtPose, CreateFrameAtPoseRequest
+from robot_helpers.srv import TransformPoses, CreateFrameAtPose
 from perception.msg import PerceptionData
 import sys
+import ros_numpy
 import rospy
-from rospy import service
-from sensor_msgs.msg import Image, CameraInfo
-from realsense2_camera.msg import Extrinsics
+from sensor_msgs.msg import Image
 from std_msgs.msg import String
 from std_msgs.msg import Float32MultiArray
-from geometry_msgs.msg import Pose, PoseArray, PoseStamped
 from ros_numpy import numpify
 
-from math import sqrt
+from copy import deepcopy
 import numpy as np
 import tensorflow as tf
 import time
@@ -97,26 +94,26 @@ class Model:
             # define class thresholds, ids, and names.
             self.class_thresh = {
                 'Connector':         {'thresh': 0.2, 'id': 0},
-                'CPU':               {'thresh': 0.8, 'id': 1},
+                'CPU':               {'thresh': 0.5, 'id': 1},
                 'Fan':               {'thresh': 0.8, 'id': 2},
-                'Hard Disk':         {'thresh': 0.5, 'id': 3},
+                'Hard Disk':         {'thresh': 0.3, 'id': 3},
                 'Motherboard':       {'thresh': 0.7, 'id': 4},
                 'RAM':               {'thresh': 0.7, 'id': 5},
                 'Screw':             {'thresh': 0.3, 'id': 6},
                 'SSD':               {'thresh': 0.8, 'id': 7},
                 'Battery':           {'thresh': 0.5, 'id': 8},
-                'WLAN':              {'thresh': 0.7, 'id': 9},
+                'WLAN':              {'thresh': 0.5, 'id': 9},
                 'CD-ROM':            {'thresh': 0.5, 'id': 10},
                 'Laptop_Back_Cover': {'thresh': 0.6, 'id': 11},
                 'Port':              {'thresh': 0.2, 'id': 12},
                 'RTC_Battery':       {'thresh': 0.5, 'id': 13},
-                'HD_Bay':            {'thresh': 0.5, 'id': 14},
-                'CD_Bay':            {'thresh': 0.5, 'id': 15},
-                'Battery_Bay':       {'thresh': 0.5, 'id': 16},
-                'SD_Slot':           {'thresh': 0.5, 'id': 17},
+                'HD_Bay':            {'thresh': 0.3, 'id': 14},
+                'CD_Bay':            {'thresh': 0.3, 'id': 15},
+                'Battery_Bay':       {'thresh': 0.3, 'id': 16},
+                'SD_Slot':           {'thresh': 0.3, 'id': 17},
                 'front_cover':       {'thresh': 0.5, 'id': 18},
                 'mouse_pad':         {'thresh': 0.5, 'id': 19},
-                'keyboard_bay':      {'thresh': 0.5, 'id': 20},
+                'keyboard_bay':      {'thresh': 0.3, 'id': 20},
                 'keyboard':          {'thresh': 0.5, 'id': 21}
             }
 
@@ -145,7 +142,7 @@ class Model:
         self.state_publisher = rospy.Publisher("/found_components", String, queue_size=1)
         rospy.Subscriber("/capture_state", String, self.capture_callback)
         self.state = "capture" # if state == "caoture cpu screws" preserve the previous cpu screws
-
+        self.free_area_tunning_pub = rospy.Publisher('/free_area_tunning', Image, queue_size=1)
 
         # Detect laptop pose parameters
         self.cam_helpers = RealsenseHelpers()
@@ -408,8 +405,40 @@ class Model:
         else:
             return boxes
     
-    def free_areas_detection(self,detections, img):
-        pass
+    def free_areas_detection(self, detections, img, tol=0, draw=False):
+        other_boxes = []
+        for cname in self.cname_to_cid.keys():
+            if cname == "Motherboard":
+                mother_box = self.get_class_detections(detections, 'Motherboard', format=('x1', 'y1', 'x2', 'y2'))[0]
+            else:
+                other_boxes.append(self.get_class_detections(detections, cname, format=('x1', 'y1', 'x2', 'y2')))
+        mx1, my1, mx2, my2 = mother_box[0], mother_box[1], mother_box[2], mother_box[3]
+        mx1 = max(0, mx1-tol)
+        my1 = max(0, my1-tol)
+        mx2 = min(img.shape[1] - 1, mx2+tol)
+        my2 = min(img.shape[1] - 1, my2+tol)
+        free_area_img = deepcopy(img)
+        free_area_img[:my1+tol,:, :] = 0
+        free_area_img[:, :mx1+tol :] = 0
+        free_area_img[my2-tol:, :, :] = 0
+        free_area_img[:, mx2-tol:, :] = 0
+        for cboxes in other_boxes:
+            for box in cboxes:
+                x1, y1, x2, y2 = box[0], box[1], box[2], box[3]
+                x1 = max(0, x1-tol)
+                y1 = max(0, y1-tol)
+                x2 = min(img.shape[1] - 1, x2+tol)
+                y2 = min(img.shape[0] - 1, y2+tol)
+                free_area_img[y1:y2, x1:x2, :] = 0
+        # mother_img = free_area_img[my1:my2, mx1:mx2, :]        
+        # cv2.imshow("motherboard", free_area_img)
+        # cv2.waitKey(0)
+        draw_on = img if draw else None
+        gray_img = cv2.cvtColor(free_area_img, cv2.COLOR_BGR2GRAY)
+        picking_point = detect_picking_point(gray_img, center=((my1 + my2) // 2, (mx1 + mx2) // 2), draw_on=draw_on)
+        # self.free_area_tunning_pub.publish(ros_numpy.msgify(Image, mother_img, encoding='bgr8'))
+        return picking_point
+
     
     def detect_laptop_pose_data_as_pose_array(self, draw=False):
         # Get current distances of all pixels from the depth image.
@@ -612,14 +641,16 @@ if __name__ == "__main__":
     publish_flipping_plan_data = rospy.get_param(ns+'/publish_flipping_plan_data', False)
     publish_cut_path = rospy.get_param(ns+'/publish_cut_path', False)
     publish_screw_centers = rospy.get_param(ns+'/publish_screw_centers', False)
-    use_state = rospy.get_param(ns+'/use_state', True)
+    use_state = rospy.get_param(ns+'/use_state', False)
 
     model = Model(model_path='/home/' + user + '/' + ws + '/src/perception/models/',
                   image_topic='/camera/color/image_raw',
                   cutting_plan_topic="/cutting_path", model_type='yolo', imgsz=832)
     print(use_state)
-    img_num = 1
-    images_path = '/home/' + user + '/TensorFlow/workspace/training_demo/images/train/'
+    img_num = 10
+    draw = False
+    yolo_draw = False
+    images_path = '/home/' + user + '/TensorFlow/workspace/training_demo/images/test/'
     if use_state:
         rospy.spin()
     else:
@@ -627,7 +658,7 @@ if __name__ == "__main__":
             # Recieve an image msg from camera topic, then, return image and detections.
             image, detections = model.recieve_and_detect(
                 read_img=True,
-                image_path= images_path + str(img_num) + '.jpg')
+                image_path= images_path + str(img_num) + '.jpg', draw=yolo_draw)
 
             # Generate the cover cutting path, and screw holes from given detections and image to visulaisSe on.
             cut_path, screw_holes = model.generate_cover_cutting_path(image, detections,
@@ -635,7 +666,8 @@ if __name__ == "__main__":
                                                                     # generated path params
                                                                     tol=20, method=0, min_hole_dist=10, hole_tol=0,
                                                                     return_holes_inside_cut_path=False,
-                                                                    filter_screws=True)
+                                                                    filter_screws=False, draw=draw)
+            model.free_areas_detection(detections=detections, img=image, tol=20, draw=True)
             cv2.imshow("image", image)
             key = cv2.waitKey(0) & 0xFF
             cv2.destroyAllWindows()
