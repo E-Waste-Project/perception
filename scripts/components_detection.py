@@ -600,11 +600,11 @@ if __name__ == "__main__":
     publish_flipping_plan_data = rospy.get_param(ns+'/publish_flipping_plan_data', False)
     publish_cut_path = rospy.get_param(ns+'/publish_cut_path', False)
     publish_screw_centers = rospy.get_param(ns+'/publish_screw_centers', False)
-    use_state = rospy.get_param(ns+'/use_state', False)
+    use_state = rospy.get_param(ns+'/use_state', True)
 
     model = Model(model_path='/home/' + user + '/' + ws + '/src/perception/models/',
                   image_topic='/camera/color/image_raw',
-                  cutting_plan_topic="/cutting_path", model_type='yolo', imgsz=1280)
+                  cutting_plan_topic="/cutting_path", model_type='yolo', imgsz=832)
     print(use_state)
     img_num = 1
     images_path = '/home/' + user + '/TensorFlow/workspace/training_demo/images/train/'

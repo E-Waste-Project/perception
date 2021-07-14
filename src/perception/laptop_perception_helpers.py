@@ -827,10 +827,10 @@ def detect_laptop_pose(dist_mat, x_min=-2, x_max=2, y_min=-2, y_max=2, z_min=0, 
                                        y_lim=(y_min, y_max),
                                        z_lim=(z_min, z_max))
     
-    dist_image = cv2.cvtColor(dist_image, cv2.COLOR_GRAY2BGR)
+    color_img = cv2.cvtColor(dist_image, cv2.COLOR_GRAY2BGR)
     draw_on = dist_image if draw else None
     laptop_data_px = detect_laptop(dist_image, draw_on=draw_on)
-    return laptop_data_px, dist_image
+    return laptop_data_px, color_img
 
 class RealsenseHelpers():
     def __init__(self, raw_depth=True):
@@ -864,14 +864,14 @@ class RealsenseHelpers():
         return np.dot(transform_mat, modified_dist_mat).reshape(dist_mat.shape)
     
     def get_intrinsics_as_dict_from_intrinsics_camera_info(self, intrinsics):
-        intrinsics = {'fx': 0, 'fy': 0, 'px': 0, 'py': 0, 'w': 0, 'h': 0}
-        intrinsics['fx'] = intrinsics.K[0]
-        intrinsics['fy'] = intrinsics.K[4]
-        intrinsics['px'] = intrinsics.K[2]
-        intrinsics['py'] = intrinsics.K[5]
-        intrinsics['w'] = intrinsics.width
-        intrinsics['h'] = intrinsics.height
-        return intrinsics
+        intr = {'fx': 0, 'fy': 0, 'px': 0, 'py': 0, 'w': 0, 'h': 0}
+        intr['fx'] = intrinsics.K[0]
+        intr['fy'] = intrinsics.K[4]
+        intr['px'] = intrinsics.K[2]
+        intr['py'] = intrinsics.K[5]
+        intr['w'] = intrinsics.width
+        intr['h'] = intrinsics.height
+        return intr
 
     def calculate_dist_3D(self, depth_img, intrinsics):
         intr = self.get_intrinsics_as_dict_from_intrinsics_camera_info(intrinsics)
@@ -894,11 +894,11 @@ class RealsenseHelpers():
         depth_img = ros_numpy.numpify(depth_img_msg)
         intrinsics = rospy.wait_for_message(intrinsics_topic, CameraInfo)
         # Calculate the 3d data of each pixel in the depth image and pu it in dist_mat.
-        dist_mat = self.cam_helpers.calculate_dist_3D(depth_img, intrinsics)
+        dist_mat = self.calculate_dist_3D(depth_img, intrinsics)
         if transform_to_color:
             # Get the extrinsics data and transform data in dist_mat from depth camera frame to color frame.
             extrinsics = rospy.wait_for_message(extrinsics_topic, Extrinsics)
-            dist_mat = self.cam_helpers.transform_depth_to_color_frame(dist_mat, extrinsics)
+            dist_mat = self.transform_depth_to_color_frame(dist_mat, extrinsics)
         return dist_mat
         
 
