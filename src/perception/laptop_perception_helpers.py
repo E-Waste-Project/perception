@@ -318,7 +318,7 @@ def detect_laptop(input_img, draw_on=None, **kwargs):
         return None
 
 
-def detect_picking_point(input_img, center, draw_on=None):
+def detect_picking_point(input_img, center, depth_img=None, draw_on=None, use_depth=False):
     # Takes gray_scale img, returns rect values of detected laptop.
 
     kwargs={'min_val' : 0,
@@ -346,7 +346,22 @@ def detect_picking_point(input_img, center, draw_on=None):
     points_indices = np.row_stack(y).T
     # point = np.array([input_img.shape[0] // 2, input_img.shape[1] // 2])
     point = np.array([center[0], center[1]])
-    point_nearest_to_motherboard_center = np.argmin(euclidean_dist_array(points_indices, point))
+    points_dist = euclidean_dist_array(points_indices, point)
+    if use_depth:
+        points_depth = depth_img[points_indices]
+        non_zero_depth_indices = np.where(points_depth > 0)
+        points_depth = points_depth[non_zero_depth_indices]
+        points_dist = points_dist[non_zero_depth_indices]
+        y[0] = np.delete(y[0], non_zero_depth_indices, axis=0)
+        y[1] = np.delete(y[1], non_zero_depth_indices, axis=0)
+        points_depth -= np.mean(points_depth)
+        points_depth /= np.std(points_depth)
+        points_dist -= np.mean(points_dist)
+        points_dist /= np.std(points_dist)
+        indices = np.sort(np.abs(points_dist/points_depth))
+        point_nearest_to_motherboard_center = indices[0]
+    else:
+        point_nearest_to_motherboard_center = np.argmin(points_dist)
     py, px = y[0][point_nearest_to_motherboard_center], y[1][point_nearest_to_motherboard_center]
     cv2.circle(draw_on, (px, py), 5, color=(0, 0, 255), thickness=-1)
     cv2.circle(draw_on, (point[1], point[0]), 10, color=(0, 255, 0), thickness=2)

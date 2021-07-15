@@ -406,7 +406,7 @@ class Model:
         else:
             return boxes
     
-    def free_areas_detection(self, detections, img, tol=0, draw=False):
+    def free_areas_detection(self, detections, img, tol=0, use_depth=False, draw=False):
         other_boxes = []
         for cname in self.cname_to_cid.keys():
             if cname == "Motherboard":
@@ -436,7 +436,11 @@ class Model:
         # cv2.waitKey(0)
         draw_on = img if draw else None
         gray_img = cv2.cvtColor(free_area_img, cv2.COLOR_BGR2GRAY)
-        picking_point = detect_picking_point(gray_img, center=((my1 + my2) // 2, (mx1 + mx2) // 2), draw_on=draw_on)
+        depth_img = None
+        if use_depth:
+            depth_img = rospy.wait_for_message("/camera/aligned_depth_to_color/image_raw")
+        picking_point = detect_picking_point(gray_img, center=((my1 + my2) // 2, (mx1 + mx2) // 2),
+         depth_img=depth_img, use_depth=use_depth, draw_on=draw_on)
         # self.free_area_tunning_pub.publish(ros_numpy.msgify(Image, mother_img, encoding='bgr8'))
         return picking_point
 
