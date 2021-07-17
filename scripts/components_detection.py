@@ -569,16 +569,21 @@ class Model:
                 "/camera/aligned_depth_to_color/image_raw", Image
             )
             depth_img = ros_numpy.numpify(depth_img).astype(np.float)
-            dist_mat = self.cam_helpers.get_dist_mat_from_cam("/camera/aligned_depth_to_color/image_raw", intrinsics_topic="/camera/color/camera_info")
-        picking_point, mother_pixels = detect_picking_point(
+            dist_mat = self.cam_helpers.get_dist_mat_from_cam(
+                depth_topic="/camera/aligned_depth_to_color/image_raw",
+                intrinsics_topic="/camera/color/camera_info"
+                )
+        picking_point = detect_picking_point(
             gray_img,
+            use_center=False,
             center=((my1 + my2) // 2, (mx1 + mx2) // 2),
             depth_img=deepcopy(depth_img),
+            dist_mat=deepcopy(dist_mat),
             use_depth=use_depth,
-            draw_on=draw_on,
+            method=1,
+            draw_on=draw_on
         )
         # self.free_area_tunning_pub.publish(ros_numpy.msgify(Image, mother_img, encoding='bgr8'))
-            
         return picking_point
 
     def detect_laptop_pose_data_as_pose_array(self, draw=False):

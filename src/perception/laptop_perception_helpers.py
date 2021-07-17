@@ -371,10 +371,10 @@ def detect_laptop(input_img, draw_on=None, **kwargs):
 
 
 def detect_picking_point(
-    input_img, center=None, depth_img=None, draw_on=None, use_depth=False, use_center=False):
+    input_img, center=None, depth_img=None, dist_mat=None, draw_on=None, use_depth=False, use_center=False, method=0, **kwargs):
     # Takes gray_scale img, returns rect values of detected laptop.
 
-    kwargs = {
+    all_kwargs = {
         "min_val": 0,
         "max_val": 500000,
         "gauss_kernel": 1,
@@ -387,7 +387,11 @@ def detect_picking_point(
         "sorting_key": enclosing_rect_area,
     }
 
-    filtered_contours = find_contours(input_img, **kwargs)
+    for key, val in kwargs.items():
+        if key in all_kwargs.keys():
+            all_kwargs[key] = val
+
+    filtered_contours = find_contours(input_img, **all_kwargs)
 
     filled_cnt_img = np.zeros(input_img.shape)
     cnt = filtered_contours[0]
@@ -420,28 +424,56 @@ def detect_picking_point(
         print("y_after", mother_pixels[0].shape)
         print("depth_after", points_depth.shape)
         print("dist_after", points_dist.shape)
-        original_points_depth = deepcopy(points_depth)
-        points_depth -= np.mean(points_depth)
-        points_depth /= np.std(points_depth)
-        points_dist -= np.mean(points_dist)
-        points_dist /= np.std(points_dist)
-        indices = np.argsort(points_dist - 0.3*points_depth)
-        # indices = np.argsort(np.abs(points_dist))
-        point_nearest_to_motherboard_center = indices[len(indices) // 2]
+        if method == 1:
+            first_n_percent = int(0.1 * points_depth.shape[0])
+            indices = np.argsort(np.abs(points_depth))[:max(first_n_percent, 1)]
+            points_dist = points_dist[indices]
+            points_depth = points_depth[indices]
+            mother_pixels[0] = mother_pixels[0][indices]
+            mother_pixels[1] = mother_pixels[1][indices]
+            indices = np.argsort(points_dist)
+            points_dist = points_dist[indices]
+            points_depth = points_depth[indices]
+            point_nearest_to_motherboard_center = indices[0]
+        elif method == 0:
+            points_depth -= np.mean(points_depth)
+            points_depth /= np.std(points_depth)
+            points_dist -= np.mean(points_dist)
+            points_dist /= np.std(points_dist)
+            indices = np.argsort(points_dist - 0.3*points_depth)
+            indices = np.argsort(np.abs(points_dist))
+            point_nearest_to_motherboard_center = indices[len(indices) // 2]
+
+        mother_pixels[0] = mother_pixels[0][indices]
+        mother_pixels[1] = mother_pixels[1][indices]
+
+        print(indices)
+        xyz = dist_mat[:, mother_pixels].reshape(-1, 3)
+        for i in range(xyz.shape[0]):
+            x, y, z = xyz[i, 0], xyz[i, 1], xyz[i, 2]
+            x_cond = np.isclose(x - 0.036, xyz[:, 0])
+            yz_cond = np.isclose(np.array([y, z]).reshape(1, 2), xyz[:, 1:])
+            indices = np.where(x_cond and yz_cond)
+            if indices.shape[0] >= 2:
+                idx = indices[0]
+                if idx == i:
+                    idx = indices[1]
+                print("picking_point = ", xyz[i, :])
+                print("other_picking_points = ", xyz[indices, :])
+                point_nearest_to_motherboard_center = idx
+                break
+            else:
+                print("No similar point for picking_point = ", xyz[i, :])
     else:
         point_nearest_to_motherboard_center = np.argmin(points_dist)
-    print(indices)
     print(point_nearest_to_motherboard_center)
-    py, px = (
+    picking_point = (
         mother_pixels[0][point_nearest_to_motherboard_center],
         mother_pixels[1][point_nearest_to_motherboard_center],
     )
-    filtered_mother_pixels = [mother_pixels[0][indices], mother_pixels[1][indices]]
-    cv2.circle(draw_on, (px, py), 5, color=(0, 0, 255), thickness=-1)
+    cv2.circle(draw_on, picking_point, 5, color=(0, 0, 255), thickness=-1)
     cv2.circle(draw_on, (point[1], point[0]), 10, color=(0, 255, 0), thickness=2)
-    if use_depth:
-        return (px, py), filtered_mother_pixels
-    return (px, py), mother_pixels
+    return picking_point
 
 
 def detect_holes(input_img, draw_on=None):
