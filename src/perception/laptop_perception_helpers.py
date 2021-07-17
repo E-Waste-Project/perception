@@ -371,7 +371,16 @@ def detect_laptop(input_img, draw_on=None, **kwargs):
 
 
 def detect_picking_point(
-    input_img, center=None, depth_img=None, dist_mat=None, draw_on=None, use_depth=False, use_center=False, method=0, **kwargs):
+    input_img,
+    center=None,
+    depth_img=None,
+    dist_mat=None,
+    draw_on=None,
+    use_depth=False,
+    use_center=False,
+    method=0,
+    **kwargs
+):
     # Takes gray_scale img, returns rect values of detected laptop.
 
     all_kwargs = {
@@ -426,7 +435,7 @@ def detect_picking_point(
         print("dist_after", points_dist.shape)
         if method == 1:
             first_n_percent = int(0.1 * points_depth.shape[0])
-            indices = np.argsort(np.abs(points_depth))[:max(first_n_percent, 1)]
+            indices = np.argsort(np.abs(points_depth))[: max(first_n_percent, 1)]
             points_dist = points_dist[indices]
             points_depth = points_depth[indices]
             mother_pixels[0] = mother_pixels[0][indices]
@@ -440,7 +449,7 @@ def detect_picking_point(
             points_depth /= np.std(points_depth)
             points_dist -= np.mean(points_dist)
             points_dist /= np.std(points_dist)
-            indices = np.argsort(points_dist - 0.3*points_depth)
+            indices = np.argsort(points_dist - 0.3 * points_depth)
             indices = np.argsort(np.abs(points_dist))
             point_nearest_to_motherboard_center = indices[len(indices) // 2]
 
@@ -448,18 +457,20 @@ def detect_picking_point(
         mother_pixels[1] = mother_pixels[1][indices]
 
         print(indices)
-        xyz = dist_mat[:, mother_pixels].reshape(-1, 3)
+        xyz = dist_mat[:, mother_pixels[0], mother_pixels[1]].reshape(-1, 3)
         for i in range(xyz.shape[0]):
             x, y, z = xyz[i, 0], xyz[i, 1], xyz[i, 2]
-            x_cond = np.isclose(x - 0.036, xyz[:, 0])
-            yz_cond = np.isclose(np.array([y, z]).reshape(1, 2), xyz[:, 1:])
-            indices = np.where(x_cond and yz_cond)
-            if indices.shape[0] >= 2:
-                idx = indices[0]
+            x_cond = np.isclose(x - 0.036, xyz[:, 0], rtol=2e-3, atol=2e-3)
+            y_cond = np.isclose(y, xyz[:, 1], rtol=2e-3, atol=2e-3)
+            z_cond = np.isclose(z, xyz[:, 2], rtol=2e-3, atol=2e-3)
+            indices = np.where(np.logical_and(x_cond, np.logical_and(y_cond, z_cond)))
+            print(indices)
+            if indices[0].shape[0] >= 2:
+                idx = indices[0][0]
                 if idx == i:
-                    idx = indices[1]
+                    idx = indices[0][1]
                 print("picking_point = ", xyz[i, :])
-                print("other_picking_points = ", xyz[indices, :])
+                print("other_picking_points = ", xyz[indices[0], :])
                 point_nearest_to_motherboard_center = idx
                 break
             else:
