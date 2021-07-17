@@ -434,7 +434,7 @@ def detect_picking_point(
             indices = np.argsort(points_dist)
             points_dist = points_dist[indices]
             points_depth = points_depth[indices]
-            point_nearest_to_motherboard_center = indices[0]
+            picking_point_idx = indices[0]
         elif method == 0:
             points_depth -= np.mean(points_depth)
             points_depth /= np.std(points_depth)
@@ -442,7 +442,7 @@ def detect_picking_point(
             points_dist /= np.std(points_dist)
             indices = np.argsort(points_dist - 0.3*points_depth)
             indices = np.argsort(np.abs(points_dist))
-            point_nearest_to_motherboard_center = indices[len(indices) // 2]
+            picking_point_idx = indices[len(indices) // 2]
 
         mother_pixels[0] = mother_pixels[0][indices]
         mother_pixels[1] = mother_pixels[1][indices]
@@ -459,20 +459,28 @@ def detect_picking_point(
                 if idx == i:
                     idx = indices[1]
                 print("picking_point = ", xyz[i, :])
-                print("other_picking_points = ", xyz[indices, :])
-                point_nearest_to_motherboard_center = idx
+                print("other_finger_picking_points = ", xyz[indices, :])
+                picking_point_idx = i
+                other_finger_picking_point_idx = idx
+                other_finger_picking_point = (
+                    mother_pixels[0][other_finger_picking_point_idx],
+                    mother_pixels[1][other_finger_picking_point_idx],
+                    )
+                if draw_on is not None:
+                    cv2.circle(draw_on, other_finger_picking_point, 5, color=(255, 0, 0), thickness=-1)
                 break
             else:
                 print("No similar point for picking_point = ", xyz[i, :])
     else:
-        point_nearest_to_motherboard_center = np.argmin(points_dist)
-    print(point_nearest_to_motherboard_center)
+        picking_point_idx = np.argmin(points_dist)
+    print(picking_point_idx)
     picking_point = (
-        mother_pixels[0][point_nearest_to_motherboard_center],
-        mother_pixels[1][point_nearest_to_motherboard_center],
+        mother_pixels[0][picking_point_idx],
+        mother_pixels[1][picking_point_idx],
     )
-    cv2.circle(draw_on, picking_point, 5, color=(0, 0, 255), thickness=-1)
-    cv2.circle(draw_on, (point[1], point[0]), 10, color=(0, 255, 0), thickness=2)
+    if draw_on is not None:
+        cv2.circle(draw_on, picking_point, 5, color=(0, 0, 255), thickness=-1)
+        cv2.circle(draw_on, (point[1], point[0]), 10, color=(0, 255, 0), thickness=2)
     return picking_point
 
 
