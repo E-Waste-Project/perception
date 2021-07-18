@@ -260,7 +260,7 @@ class Model:
             image,
             detections,
             min_screw_score=0,
-            tol=20,
+            tol=50,
             method=1,
             min_hole_dist=10,
             hole_tol=0,  # generated path params
@@ -290,7 +290,9 @@ class Model:
         
         # Generate the keyboard cut path
         keyboard = self.get_class_detections(detections, "keyboard", best_only=True)
-        keyboard_cut_path = self.generate_rectangular_cutting_path([keyboard], interpolate=False)[0]
+        keyboard_cut_path = []
+        if len(keyboard) > 0:
+            keyboard_cut_path = self.generate_rectangular_cutting_path([keyboard], interpolate=False)[0]
 
         if self.state != "capture cpu screws":
             # Generate the screws_near_cpu cut paths
@@ -324,18 +326,20 @@ class Model:
         data_msg.flipping_points = laptop_data_pose_array
 
         if cover_type == "Laptop_Back_Cover":
+            data_msg.front_cover_cut_path = self.construct_float_multi_array([])
             # Add back cover cut path
             data_msg.back_cover_cut_path = self.construct_float_multi_array(
                 cover_cut_path
             )
         elif cover_type == "front_cover":
+            data_msg.back_cover_cut_path = self.construct_float_multi_array([])
             # Add front cover cut path
             data_msg.front_cover_cut_path = self.construct_float_multi_array(
                 cover_cut_path
             )
         
         # Add keyboard cut path
-        data_msg.back_cover_cut_path = self.construct_float_multi_array(
+        data_msg.keyboard_cut_path = self.construct_float_multi_array(
                 keyboard_cut_path
             )
         
@@ -399,7 +403,7 @@ class Model:
             detections=detections, img=image, tol=20, use_depth=True, draw=draw
         )
         data_msg.motherboard = self.construct_float_multi_array(
-            path_points=[mother_picking_point]
+            path_points=mother_picking_point
         )
 
         key = 0
@@ -575,8 +579,10 @@ class Model:
         for cname in self.cname_to_cid.keys():
             if cname == "Motherboard":
                 mother_box = self.get_class_detections(
-                    detections, "Motherboard", format=("x1", "y1", "x2", "y2")
-                )[0]
+                    detections, "Motherboard", format=("x1", "y1", "x2", "y2"), best_only=True
+                )
+                if len(mother_box) < 1:
+                    return []
             else:
                 other_boxes.append(
                     self.get_class_detections(
@@ -627,7 +633,7 @@ class Model:
             draw_on=draw_on
         )
         # self.free_area_tunning_pub.publish(ros_numpy.msgify(Image, mother_img, encoding='bgr8'))
-        return picking_point
+        return [picking_point]
 
     def detect_laptop_pose_data_as_pose_array(self, draw=False):
         # Get current distances of all pixels from the depth image.
