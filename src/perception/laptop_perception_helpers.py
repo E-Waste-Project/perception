@@ -434,7 +434,7 @@ def detect_picking_point(
         print("depth_after", points_depth.shape)
         print("dist_after", points_dist.shape)
         if method == 1:
-            first_n_percent = int(0.1 * points_depth.shape[0])
+            first_n_percent = int(0.5 * points_depth.shape[0])
             indices = np.argsort(np.abs(points_depth))[: max(first_n_percent, 1)]
             points_dist = points_dist[indices]
             points_depth = points_depth[indices]
@@ -458,27 +458,27 @@ def detect_picking_point(
 
         print(indices)
         xyz = dist_mat[:, mother_pixels[0], mother_pixels[1]].reshape(-1, 3)
+        print("xyz shape = ", xyz.shape)
+        print("num of indices = ", len(indices))
         for i in range(xyz.shape[0]):
             x, y, z = xyz[i, 0], xyz[i, 1], xyz[i, 2]
-            x_cond = np.isclose(x - 0.036, xyz[:, 0], rtol=2e-3, atol=2e-3)
-            y_cond = np.isclose(y, xyz[:, 1], rtol=2e-3, atol=2e-3)
+            x_cond = np.isclose(x - 0.036, xyz[:, 0], rtol=5e-3, atol=5e-3)
+            y_cond = np.isclose(y, xyz[:, 1], rtol=5e-3, atol=5e-3)
             z_cond = np.isclose(z, xyz[:, 2], rtol=2e-3, atol=2e-3)
             indices = np.where(np.logical_and(x_cond, np.logical_and(y_cond, z_cond)))
-            print(indices)
-            if indices[0].shape[0] >= 2:
-                idx = indices[0][0]
-                if idx == i:
-                    idx = indices[0][1]
+            if indices[0].shape[0] >= 1:
+                print(indices)
+                idx = indices[0][-1]
                 print("picking_point = ", xyz[i, :])
                 print("other_finger_picking_points = ", xyz[indices[0], :])
                 picking_point_idx = i
                 other_finger_picking_point_idx = idx
                 other_finger_picking_point = (
-                    mother_pixels[0][other_finger_picking_point_idx],
                     mother_pixels[1][other_finger_picking_point_idx],
+                    mother_pixels[0][other_finger_picking_point_idx],
                     )
                 if draw_on is not None:
-                    cv2.circle(draw_on, other_finger_picking_point, 5, color=(255, 0, 0), thickness=-1)
+                    cv2.circle(draw_on, other_finger_picking_point, 10, color=(255, 0, 0), thickness=-1)
                 break
             else:
                 print("No similar point for picking_point = ", xyz[i, :])
@@ -486,11 +486,11 @@ def detect_picking_point(
         picking_point_idx = np.argmin(points_dist)
     print(picking_point_idx)
     picking_point = (
-        mother_pixels[0][picking_point_idx],
         mother_pixels[1][picking_point_idx],
+        mother_pixels[0][picking_point_idx],
     )
     if draw_on is not None:
-        cv2.circle(draw_on, picking_point, 5, color=(0, 0, 255), thickness=-1)
+        cv2.circle(draw_on, picking_point, 10, color=(0, 0, 255), thickness=-1)
         cv2.circle(draw_on, (point[1], point[0]), 10, color=(0, 255, 0), thickness=2)
     return picking_point
 

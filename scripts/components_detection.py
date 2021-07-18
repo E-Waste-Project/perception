@@ -25,6 +25,7 @@ import rospy
 from sensor_msgs.msg import Image
 from std_msgs.msg import String
 from std_msgs.msg import Float32MultiArray
+from geometry_msgs.msg import PoseArray
 from ros_numpy import numpify
 
 from threading import Thread
@@ -230,8 +231,21 @@ class Model:
             dist_image,
         ) = self.detect_laptop_pose_data_as_pose_array(draw=depth_draw)
 
+        # Transform laptop_center from calibrated_frame to base_link
+        laptop_center_pose_array = PoseArray()
+        laptop_center_pose_array.poses.append(deepcopy(laptop_data_pose_array.poses[0]))
+        transformation_data = {
+            "ref_frame": String("calibrated_frame"),
+            "target_frame": String("base_link"),
+            "poses_to_transform": laptop_center_pose_array,
+        }
+        response = self.service_req(
+            "/transform_poses", TransformPoses, inputs=transformation_data
+        )
+        laptop_center_transformed = response.transformed_poses
+        
         # Create/Update frame at the laptop center
-        frame_pose = laptop_data_pose_array.poses[0]
+        frame_pose = laptop_center_transformed.poses[0]
         frame_data = {
             "ref_frame": String("base_link"),
             "new_frame": String("laptop"),
@@ -242,7 +256,7 @@ class Model:
         )
 
         # Generate the cover cutting path, and screw holes from given detections and image to visulaise on.
-        back_cover_cut_path, screw_holes = self.generate_cover_cutting_path(
+        cover_cut_path, screw_holes, cover_type = self.generate_cover_cutting_path(
             image,
             detections,
             min_screw_score=0,
@@ -254,6 +268,8 @@ class Model:
             filter_screws=False,
             draw=draw,
         )
+        
+
 
         # Filter screws near the cpu and add them to self.screws_near_cpu
         if self.state != "capture cpu screws":
@@ -271,6 +287,10 @@ class Model:
         screws_cut_path = self.generate_rectangular_cutting_path(
             screw_holes, interpolate=False
         )
+        
+        # Generate the keyboard cut path
+        keyboard = self.get_class_detections(detections, "keyboard", best_only=True)
+        keyboard_cut_path = self.generate_rectangular_cutting_path([keyboard], interpolate=False)[0]
 
         if self.state != "capture cpu screws":
             # Generate the screws_near_cpu cut paths
@@ -303,10 +323,23 @@ class Model:
         # Add flipping and laptop pose data to the data_msg.
         data_msg.flipping_points = laptop_data_pose_array
 
-        # Add back cover cut path
+        if cover_type == "Laptop_Back_Cover":
+            # Add back cover cut path
+            data_msg.back_cover_cut_path = self.construct_float_multi_array(
+                cover_cut_path
+            )
+        elif cover_type == "front_cover":
+            # Add front cover cut path
+            data_msg.front_cover_cut_path = self.construct_float_multi_array(
+                cover_cut_path
+            )
+        
+        # Add keyboard cut path
         data_msg.back_cover_cut_path = self.construct_float_multi_array(
-            back_cover_cut_path
-        )
+                keyboard_cut_path
+            )
+        
+        # Add ports cut paths
         for i in range(len(ports_cut_path)):
             path_msg = self.construct_float_multi_array(ports_cut_path[i])
             data_msg.ports_cut_path.append(path_msg)
@@ -330,6 +363,16 @@ class Model:
         #     path_msg = self.construct_float_multi_array(screws_near_cpu_cut_path[i])
         #     data_msg.screws_near_cpu_cut_path.append(path_msg)
 
+        # Add detected frontcover as mousepad center.
+        data_msg.front_cover = self.get_detection_as_msg(
+            detections=detections, class_name="mouse_pad", best_only=True
+        )
+        
+        # Add detected keyboard center.
+        data_msg.keyboard = self.get_detection_as_msg(
+            detections=detections, class_name="keyboard", best_only=True
+        )
+        
         # Add detected CD-ROM.
         data_msg.cd_rom = self.get_detection_as_msg(
             detections=detections, class_name="CD-ROM", best_only=True
@@ -383,8 +426,8 @@ class Model:
                 cut_boxes.extend(flipping_plan_data)
 
         # Publish the generated cutting path if not empty.
-        if len(back_cover_cut_path) > 0 and publish_cut_path:
-            cut_boxes.extend(back_cover_cut_path)
+        if len(cover_cut_path) > 0 and publish_cut_path:
+            cut_boxes.extend(cover_cut_path)
             components_msg.data = "cover"
 
         # Publish the generated cutting path if not empty.
@@ -609,11 +652,11 @@ class Model:
         return laptop_data_pose_array, dist_mat, dist_image
 
     def generate_rectangular_cutting_path(
-        self, screw_boxes, interpolate=False, npoints=20
+        self, boxes, interpolate=False, npoints=20
     ):
         cut_boxes = []
-        for sh in screw_boxes:
-            x, y, x2, y2 = sh[0], sh[1], sh[0] + sh[2], sh[1] + sh[3]
+        for b in boxes:
+            x, y, x2, y2 = b[0], b[1], b[0] + b[2], b[1] + b[3]
             box_path = [(x, y), (x, y2), (x2, y2), (x2, y), (x, y)]
             if interpolate:
                 box_path = interpolate_path(box_path, npoints=npoints)
@@ -717,6 +760,12 @@ class Model:
         cover_boxes, cover_scores = self.get_class_detections(
             detections=detections, class_name=box_cname, get_scores=True
         )
+        if len(cover_boxes) < 1:
+            box_cname = "front_cover"
+            # Get detected laptop_covers.
+            cover_boxes, cover_scores = self.get_class_detections(
+                detections=detections, class_name=box_cname, get_scores=True
+                )
 
         screw_boxes = self.get_class_detections(
             detections=detections, class_name="Screw", min_score=min_screw_score
@@ -779,7 +828,7 @@ class Model:
             if draw:
                 draw_lines(image_np, cut_path)
 
-        return cut_path, screw_boxes
+        return cut_path, screw_boxes, box_cname
 
     def construct_float_multi_array(self, path_points):
         # Publish Cutting Path.
