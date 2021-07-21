@@ -134,7 +134,7 @@ class Model:
             # define class thresholds, ids, and names.
             self.class_thresh = {
                 "Connector": {"thresh": 0.2, "id": 0},
-                "CPU": {"thresh": 0.5, "id": 1},
+                "CPU": {"thresh": 0.65, "id": 1},
                 "Fan": {"thresh": 0.8, "id": 2},
                 "Hard Disk": {"thresh": 0.3, "id": 3},
                 "Motherboard": {"thresh": 0.7, "id": 4},
@@ -218,7 +218,7 @@ class Model:
     def capture_callback(self, msg):
         # recieve state from messege
         self.state = msg.data
-        yolo_draw = False
+        yolo_draw = True
         depth_draw = True
         draw = True
         # Recieve an image msg from camera topic, then, return image and detections.
@@ -230,6 +230,9 @@ class Model:
             dist_mat,
             dist_image,
         ) = self.detect_laptop_pose_data_as_pose_array(draw=depth_draw)
+
+        laptop_data_pose_array.poses = laptop_data_pose_array.poses[0:3]
+        self.laptop_box = laptop_data_pose_array.poses[3:]
 
         # Transform laptop_center from calibrated_frame to base_link
         laptop_center_pose_array = PoseArray()
@@ -260,7 +263,7 @@ class Model:
             image,
             detections,
             min_screw_score=0,
-            tol=50,
+            tol=40,
             method=1,
             min_hole_dist=10,
             hole_tol=0,  # generated path params
@@ -269,14 +272,20 @@ class Model:
             draw=draw,
         )
         
+        print("Cover Type = ", cover_type)
 
 
         # Filter screws near the cpu and add them to self.screws_near_cpu
         if self.state != "capture cpu screws":
-            screw_holes = self.filter_screws_near_cpu(
-                screw_holes, detections, dist_as_side_ratio=0.5, draw=draw, image=image
+            screw_holes, self.screws_near_cpu = self.filter_screws_near_object(
+                screw_holes, detections, object_class="CPU", dist_as_side_ratio=0.5, draw=draw, image=image
             )
 
+        if cover_type == "Laptop_Back_Cover":
+            screw_holes, skipped_holes = self.filter_screws_near_object(
+                screw_holes, detections, object_class="Fan", dist_as_side_ratio=0.5, draw=draw, image=image
+            )
+        
         # Adjust screw centers
         # screw_holes = correct_circles(image, screw_holes)
 
@@ -290,9 +299,11 @@ class Model:
         
         # Generate the keyboard cut path
         keyboard = self.get_class_detections(detections, "keyboard", best_only=True)
+        keyboard_tol = 30
+        mod_key_board = [keyboard[0] + keyboard_tol, keyboard[1] + keyboard_tol, keyboard[2] - 2*keyboard_tol, keyboard[3] - 2*keyboard_tol]
         keyboard_cut_path = []
         if len(keyboard) > 0:
-            keyboard_cut_path = self.generate_rectangular_cutting_path([keyboard], interpolate=False)[0]
+            keyboard_cut_path = self.generate_rectangular_cutting_path([mod_key_board], interpolate=True, npoints=200)[0]
 
         if self.state != "capture cpu screws":
             # Generate the screws_near_cpu cut paths
@@ -333,11 +344,13 @@ class Model:
             )
         elif cover_type == "front_cover":
             data_msg.back_cover_cut_path = self.construct_float_multi_array([])
+            print("constructing front cover cut path")
             # Add front cover cut path
             data_msg.front_cover_cut_path = self.construct_float_multi_array(
                 cover_cut_path
             )
-        
+            print(cover_cut_path)
+            print(data_msg.front_cover_cut_path)
         # Add keyboard cut path
         data_msg.keyboard_cut_path = self.construct_float_multi_array(
                 keyboard_cut_path
@@ -409,9 +422,10 @@ class Model:
         key = 0
         if draw or yolo_draw or depth_draw:
             # self.imshow_thread.show_frame(image, dist_image)
-            cv2.imshow(self.image_win, image)
             cv2.imshow(self.depth_win, dist_image)
-            key = cv2.waitKey(0) & 0xFF
+            key = cv2.waitKey(3000) & 0xFF
+            cv2.imshow(self.image_win, image)
+            key = cv2.waitKey(3000) & 0xFF
             cv2.destroyAllWindows()
         # print("Enter 0 if wait for another callback, else publish the data")
         # decision = int(input())
@@ -574,6 +588,16 @@ class Model:
         else:
             return boxes
 
+    def generate_cdrom_cut_path(self, detections, draw=False):
+        cdrom_box = self.get_class_detections(
+                    detections, "CD-ROM", format=("x1", "y1", "x2", "y2"), best_only=True
+                )
+        dist_mat = self.cam_helpers.get_dist_mat_from_cam(depth_topic='/camera/aligned_depth_to_color/image_raw',
+                                               intrinsics_topic='/camera/color/camera_info')
+        
+        cdrom_xyz = self.cam_helpers.px_to_xyz(px_data=cdrom_box, dist_mat=dist_mat)
+        
+    
     def free_areas_detection(self, detections, img, tol=0, use_depth=False, draw=False):
         other_boxes = []
         for cname in self.cname_to_cid.keys():
@@ -722,27 +746,27 @@ class Model:
 
         return ports_cut_paths
 
-    def filter_screws_near_cpu(
-        self, screws, detections, dist_as_side_ratio=0.5, image=None, draw=False
+    def filter_screws_near_object(
+        self, screws, detections, object_class, dist_as_side_ratio=0.5, image=None, draw=False
     ):
-        cpu_boxes = self.get_class_detections(detections=detections, class_name="CPU")
+        object_boxes = self.get_class_detections(detections=detections, class_name=object_class)
 
-        self.screws_near_cpu = list(
+        screws_near_object = list(
             filter(
-                lambda box: box_near_by_dist(box, cpu_boxes, dist_as_side_ratio), screws
+                lambda box: box_near_by_dist(box, object_boxes, dist_as_side_ratio), screws
             )
         )
 
         if draw and image is not None:
-            draw_boxes(image, cpu_boxes, draw_center=True, color=(255, 0, 0))
-            draw_boxes(image, self.screws_near_cpu, draw_center=True, color=(0, 0, 255))
+            draw_boxes(image, object_boxes, draw_center=True, color=(255, 0, 0))
+            draw_boxes(image, screws_near_object, draw_center=True, color=(0, 0, 255))
 
-        screws = [box for box in screws if box not in self.screws_near_cpu]
+        screws = [box for box in screws if box not in screws_near_object]
 
-        print("There are {} Screws near cpu".format(len(self.screws_near_cpu)))
-        print("There are {} Screws not near cpu".format(len(screws)))
+        print("There are {} Screws near {}".format(len(screws_near_object), object_class))
+        print("There are {} Screws not near {}".format(len(screws), object_class))
 
-        return screws
+        return screws, screws_near_object
 
     def generate_cover_cutting_path(
         self,
@@ -772,6 +796,40 @@ class Model:
             cover_boxes, cover_scores = self.get_class_detections(
                 detections=detections, class_name=box_cname, get_scores=True
                 )
+            if len(cover_boxes) < 1:
+                cover_boxes, cover_scores = self.get_class_detections(
+                    detections=detections, class_name="keyboard", get_scores=True
+                    )
+                bay_cover_boxes, bay_cover_scores = self.get_class_detections(
+                    detections=detections, class_name="keyboard_bay", get_scores=True
+                    )
+                pad_cover_boxes, pad_cover_scores = self.get_class_detections(
+                    detections=detections, class_name="mouse_pad", get_scores=True
+                    )
+                if len(cover_boxes >= 1):
+                    cover_boxes = [
+                        [
+                            cb[0] - 50,
+                            cb[1] - 50,
+                            cb[2] + 2 * 50,
+                            cb[3] + 2 * 50,
+                            ]
+                        for cb in cover_boxes
+                        ]
+                elif len(bay_cover_boxes >= 1):
+                    cover_boxes = bay_cover_boxes
+                    cover_scores = bay_cover_scores
+                    cover_boxes = [
+                        [
+                            cb[0] - 50,
+                            cb[1] - 50,
+                            cb[2] + 2 * 50,
+                            cb[3] + 2 * 50,
+                            ]
+                        for cb in cover_boxes
+                        ]
+                elif len(pad_cover_boxes < 1):
+                    box_cname = ""
 
         screw_boxes = self.get_class_detections(
             detections=detections, class_name="Screw", min_score=min_screw_score
@@ -816,13 +874,13 @@ class Model:
 
         # Plan the Cutting Path.
         cut_path = []
-        if len(best_cover_box) > 0 and len(screw_boxes) > 0:
+        if len(best_cover_box) > 0:
             cut_path, holes_inside_cut_path = plan_cover_cutting_path(
                 laptop_coords=best_cover_box,
                 holes_coords=screw_boxes,
                 method=method,
-                interpolate=False,
-                interp_step=4,
+                interpolate=True,
+                npoints=200,
                 tol=tol,
                 min_hole_dist=min_hole_dist,
             )

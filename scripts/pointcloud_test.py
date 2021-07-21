@@ -52,7 +52,8 @@ class Subscribers():
         self.x_list = []
         self.y_list = []
         for point_num in range(0, contour_indices[:, 0].shape[0]):
-            if (abs(contour_xyz[2, point_num]-np.median(contour_xyz[2]))>0.1) and contour_indices[:, 0].shape[0]>25:
+            if ((abs(contour_xyz[2, point_num]-np.median(contour_xyz[2]))>=0.05) or (contour_xyz[2, point_num] <= 0.26)) \
+                and contour_indices[:, 0].shape[0]>25:
                 continue
             pose = Pose()
             pose.position.x = contour_xyz[1, point_num]

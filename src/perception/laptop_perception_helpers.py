@@ -254,7 +254,7 @@ def preprocess(input_img, **kwargs):
 
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(clahe_kernel, clahe_kernel))
     output_img = clahe.apply(input_img)
-
+    print(median_sz)
     output_img = cv2.medianBlur(output_img, ksize=median_sz)
 
     output_img = cv2.GaussianBlur(output_img, (gauss_kernel, gauss_kernel), 0)
@@ -317,9 +317,9 @@ def detect_laptop(input_img, draw_on=None, **kwargs):
         "min_val": 200000,
         "max_val": 500000,
         "gauss_kernel": 1,
-        "median_sz": 23,
+        "median_sz": 33,
         "clahe_kernel": 2,
-        "morph_kernel": 59,
+        "morph_kernel": 1,
         "iterations": 2,
         "dilate": False,
         "reverse": False,
@@ -335,6 +335,19 @@ def detect_laptop(input_img, draw_on=None, **kwargs):
         rect = cv2.minAreaRect(cnt)
         box = cv2.boxPoints(rect)
         box = np.int0(box)
+        clamp_pixels = 40
+        xs = list(enumerate([box[0], box[1], box[2], box[3]]))
+        xs.sort(key=lambda x: x[1][0])
+
+        box[xs[0][0]][0] += clamp_pixels
+        box[xs[1][0]][0] += clamp_pixels
+        box[xs[2][0]][0] -= clamp_pixels
+        box[xs[3][0]][0] -= clamp_pixels
+        
+        left_points = box[0:2]
+        (upper_left_corner, lower_left_corner) = (xs[0][1], xs[1][1]) if xs[0][1][1] < xs[1][1][1] else (xs[1][1], xs[0][1])
+        (upper_right_corner, lower_right_corner) = (xs[2][1], xs[3][1]) if xs[2][1][1] < xs[3][1][1] else (xs[3][1], xs[2][1])
+        box_list = [upper_left_corner, upper_right_corner, lower_right_corner, lower_left_corner]
 
         # Retrieve the key parameters of the rotated bounding box
         center = (int(rect[0][0]), int(rect[0][1]))
@@ -342,6 +355,7 @@ def detect_laptop(input_img, draw_on=None, **kwargs):
         height = int(rect[1][1])
         angle = int(rect[2])
 
+        
         if width < height:
             angle = 90 - angle
             nw = (width // 2) * sin(angle * pi / 180)
@@ -352,7 +366,9 @@ def detect_laptop(input_img, draw_on=None, **kwargs):
             nw = (height // 2) * sin(angle * pi / 180)
             nh = (height // 2) * cos(angle * pi / 180)
             flip_radius = height
-
+        print("detected_flip_radius = ", flip_radius)
+        print("box = ", box)
+        print("rect = ", rect)
         flip_point = (int(center[0] + nw), int(center[1] + nh))
         upper_point = (int(center[0] + nw), int(center[1] - nh))
         laptop_data = [
@@ -362,9 +378,24 @@ def detect_laptop(input_img, draw_on=None, **kwargs):
             flip_point[1],
             upper_point[0],
             upper_point[1],
+            box_list[0][0], # upper left corner x
+            box_list[0][1], # upper left corner y
+            box_list[1][0], # upper right corner x
+            box_list[1][1], # upper right corner y
+            box_list[2][0], # lower right corner x
+            box_list[2][1], # lower right corner y
+            box_list[3][0], # lower left corner x
+            box_list[2][1] # lower left corner y
         ]
         if draw_on is not None:
             cv2.drawContours(draw_on, [box], 0, (0, 255, 0), thickness=5)
+            cv2.circle(draw_on, (center[0], center[1]), 10, (255, 0, 0), thickness=-1)
+            cv2.circle(draw_on, (flip_point[0], flip_point[1]), 10, (0, 255, 0), thickness=-1)
+            cv2.circle(draw_on, (upper_point[0], upper_point[1]), 10, (0, 0, 255), thickness=-1)
+            
+            cv2.circle(draw_on, (box_list[0][0], box_list[0][1]), 10, (255, 0, 0), thickness=-1)
+            cv2.circle(draw_on, (box_list[1][0], box_list[1][1]), 10, (0, 255, 0), thickness=-1)
+            cv2.circle(draw_on, (box_list[2][0], box_list[2][1]), 10, (0, 0, 255), thickness=-1)
         return laptop_data
     else:
         return None
@@ -914,7 +945,7 @@ def plan_cover_cutting_path(
     holes_coords=None,
     method=0,
     interpolate=True,
-    interp_step=2,
+    npoints=20,
     edges_to_include=None,
 ):
     """Takes gray_scale img containing a laptop Or takes laptop & holes coordinates,
@@ -1008,7 +1039,7 @@ def plan_cover_cutting_path(
             raise ValueError("Wrong method number")
 
         if interpolate:
-            cut_path = interpolate_path(cut_path, step=interp_step)
+            cut_path = interpolate_path(cut_path, npoints=npoints)
 
         if draw_on is not None:
             # Draw the final cutting path in red.
@@ -1233,6 +1264,24 @@ def detect_laptop_pose(
     color_img = cv2.cvtColor(dist_image, cv2.COLOR_GRAY2BGR)
     draw_on = color_img if draw else None
     laptop_data_px = detect_laptop(dist_image, draw_on=draw_on)
+    center = laptop_data_px[0:2]
+    print("prev_center = ", center)
+    print("dist_mat_shape = ", dist_mat.shape)
+    print(dist_mat[:, center[1], center[0]])
+    non_zero_indices = np.where(dist_mat[2, :, :] > 0.1)
+    print("min_z = ", np.min(dist_mat[2, non_zero_indices[0], non_zero_indices[1]]))
+    print(dist_mat[2, non_zero_indices[0], non_zero_indices[1]]) 
+    non_zero_arr = np.row_stack(non_zero_indices).T
+    # print("non_zero_arr = ", non_zero_arr)
+    points_dist = euclidean_dist_array(non_zero_arr, (center[1], center[0]))
+    # print("points_dist = ", points_dist)
+    center_idx = np.argsort(points_dist)
+    center = [non_zero_indices[1][center_idx[0]], non_zero_indices[0][center_idx[0]]]
+    print("next_center = ", center)
+    print(dist_mat[:, center[1], center[0]])
+    laptop_data_px[0], laptop_data_px[1] = center[0], center[1]
+    if draw:
+        cv2.circle(draw_on, tuple(center), 5, (255, 255, 0), thickness=-1)
     return laptop_data_px, color_img
 
 
