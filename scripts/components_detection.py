@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+from math import fabs
 import cv2
 from perception.yolo_detector import Yolo
 from perception.coco_datasets import convert_format
@@ -40,10 +41,6 @@ warnings.filterwarnings("ignore")  # Suppress Matplotlib warnings
 
 user = socket.gethostname()
 ws = "ewaste_ws" if user == "abdelrhman" else "abb_ws"
-
-
-from threading import Thread
-import cv2, time
 
 
 class ImshowThread(object):
@@ -194,7 +191,8 @@ class Model:
             "/found_components", String, queue_size=1
         )
         rospy.Subscriber("/capture_state", String, self.capture_callback)
-        self.state = "capture"  # if state == "caoture cpu screws" preserve the previous cpu screws
+        # if state == "caoture cpu screws" preserve the previous cpu screws
+        self.state = "capture"
         self.free_area_tunning_pub = rospy.Publisher(
             "/free_area_tunning", Image, queue_size=1
         )
@@ -236,7 +234,8 @@ class Model:
 
         # Transform laptop_center from calibrated_frame to base_link
         laptop_center_pose_array = PoseArray()
-        laptop_center_pose_array.poses.append(deepcopy(laptop_data_pose_array.poses[0]))
+        laptop_center_pose_array.poses.append(
+            deepcopy(laptop_data_pose_array.poses[0]))
         transformation_data = {
             "ref_frame": String("calibrated_frame"),
             "target_frame": String("base_link"),
@@ -246,7 +245,7 @@ class Model:
             "/transform_poses", TransformPoses, inputs=transformation_data
         )
         laptop_center_transformed = response.transformed_poses
-        
+
         # Create/Update frame at the laptop center
         frame_pose = laptop_center_transformed.poses[0]
         frame_data = {
@@ -290,13 +289,14 @@ class Model:
         # screw_holes = correct_circles(image, screw_holes)
 
         # Generate the cover cutting path, and screw holes from given detections and image to visulaise on.
-        ports_cut_path = self.generate_ports_cutting_path(image, detections, draw=draw)
+        ports_cut_path = self.generate_ports_cutting_path(
+            image, detections, draw=draw)
 
         # Generate the screws cut paths
         screws_cut_path = self.generate_rectangular_cutting_path(
             screw_holes, interpolate=False
         )
-        
+
         # Generate the keyboard cut path
         keyboard = self.get_class_detections(detections, "keyboard", best_only=True)
         keyboard_tol = 30
@@ -337,7 +337,8 @@ class Model:
         data_msg.flipping_points = laptop_data_pose_array
 
         if cover_type == "Laptop_Back_Cover":
-            data_msg.front_cover_cut_path = self.construct_float_multi_array([])
+            data_msg.front_cover_cut_path = self.construct_float_multi_array([
+            ])
             # Add back cover cut path
             data_msg.back_cover_cut_path = self.construct_float_multi_array(
                 cover_cut_path
@@ -353,9 +354,9 @@ class Model:
             print(data_msg.front_cover_cut_path)
         # Add keyboard cut path
         data_msg.keyboard_cut_path = self.construct_float_multi_array(
-                keyboard_cut_path
-            )
-        
+            keyboard_cut_path
+        )
+
         # Add ports cut paths
         for i in range(len(ports_cut_path)):
             path_msg = self.construct_float_multi_array(ports_cut_path[i])
@@ -367,7 +368,8 @@ class Model:
 
         # Add cpu screws
         cpu_screw_boxes = [box_to_center(sb) for sb in self.screws_near_cpu]
-        data_msg.screws_near_cpu = self.construct_float_multi_array(cpu_screw_boxes)
+        data_msg.screws_near_cpu = self.construct_float_multi_array(
+            cpu_screw_boxes)
 
         # Add screws cut path
         for i in range(len(screws_cut_path)):
@@ -380,16 +382,22 @@ class Model:
         #     path_msg = self.construct_float_multi_array(screws_near_cpu_cut_path[i])
         #     data_msg.screws_near_cpu_cut_path.append(path_msg)
 
+        # Add cdrom cut paths
+        cdrom_cut_paths = self.generate_cdrom_cut_path(detections, interpolate=True, npoints=30)
+        for i in range(len(cdrom_cut_paths)):
+            path_msg = self.construct_float_multi_array(cdrom_cut_paths[i])
+            data_msg.cd_rom_cut_path.append(path_msg)
+        
         # Add detected frontcover as mousepad center.
         data_msg.front_cover = self.get_detection_as_msg(
             detections=detections, class_name="mouse_pad", best_only=True
         )
-        
+
         # Add detected keyboard center.
         data_msg.keyboard = self.get_detection_as_msg(
             detections=detections, class_name="keyboard", best_only=True
         )
-        
+
         # Add detected CD-ROM.
         data_msg.cd_rom = self.get_detection_as_msg(
             detections=detections, class_name="CD-ROM", best_only=True
@@ -471,7 +479,8 @@ class Model:
         self, detections, class_name, best_only=False, preprocessor=None
     ):
         preprocessor = box_to_center if preprocessor is None else preprocessor
-        boxes = self.get_class_detections(detections=detections, class_name=class_name)
+        boxes = self.get_class_detections(
+            detections=detections, class_name=class_name)
         processed_boxes = []
         if len(boxes) > 0:
             boxes = [boxes[0]] if best_only else boxes
@@ -579,7 +588,8 @@ class Model:
             enumerated_boxes = sorted(
                 list(enumerate(boxes)), key=lambda i: scores[i[0]], reverse=True
             )
-            scores = [scores[enumerated_boxes[i][0]] for i in range(len(boxes))]
+            scores = [scores[enumerated_boxes[i][0]]
+                      for i in range(len(boxes))]
             boxes = [enumerated_boxes[i][1] for i in range(len(boxes))]
         if get_scores:
             return boxes, scores
@@ -588,16 +598,63 @@ class Model:
         else:
             return boxes
 
-    def generate_cdrom_cut_path(self, detections, draw=False):
-        cdrom_box = self.get_class_detections(
-                    detections, "CD-ROM", format=("x1", "y1", "x2", "y2"), best_only=True
-                )
-        dist_mat = self.cam_helpers.get_dist_mat_from_cam(depth_topic='/camera/aligned_depth_to_color/image_raw',
-                                               intrinsics_topic='/camera/color/camera_info')
+    def generate_cdrom_cut_path(self, detections,
+                                cut_len=100,
+                                safe_distance_from_cdrom=10,
+                                port_len=100, port_width=50,
+                                interpolate=False, npoints=25):
+        cdrom_box = self.get_class_detections(detections,
+                                              "CD-ROM",
+                                              best_only=True,
+                                              format=('x1', 'y1', 'x2', 'y2'))
+        dist_mat = self.cam_helpers.get_dist_mat_from_cam(depth_topic="/camera/aligned_depth_to_color/image_raw",
+                                                          intrinsics_topic="/camera/color/camera_info")
+        cdrom_box_xyz = self.cam_helpers.px_to_xyz(
+            cdrom_box, dist_mat=dist_mat)
         
-        cdrom_xyz = self.cam_helpers.px_to_xyz(px_data=cdrom_box, dist_mat=dist_mat)
+        cdrom_vertical_sides = (cdrom_box_xyz[0], cdrom_box_xyz[3])  # (x1, x2)
+        laptop_vertical_sides = (self.laptop_box[0], self.laptop_box[3]) # (x1, x2)
+        left_side_dist = fabs(cdrom_vertical_sides[0] - laptop_vertical_sides[0])
+        right_side_dist = fabs(cdrom_vertical_sides[1] - laptop_vertical_sides[1])
+        (line_x_idx, port_x_idx) = (0, 2) if left_side_dist < right_side_dist else (2, 0)
         
-    
+        cdrom_cut_paths = []
+        # upper cutting line
+        cdrom_cut_paths.append([
+            (cdrom_box[line_x_idx] - cut_len // 2,
+                cdrom_box[1] - safe_distance_from_cdrom),
+            (cdrom_box[line_x_idx] + cut_len // 2,
+                cdrom_box[1] - safe_distance_from_cdrom)
+            ])
+        # lower cutting line
+        cdrom_cut_paths.append([
+            (cdrom_box[line_x_idx] - cut_len // 2,
+                cdrom_box[3] + safe_distance_from_cdrom),
+            (cdrom_box[line_x_idx] + cut_len // 2,
+                cdrom_box[3] + safe_distance_from_cdrom)
+        ])
+        # cdrom port cutting path
+        y_center = (cdrom_box[1] + cdrom_box[3]) // 2
+        y_upper = y_center - port_len // 2
+        y_lower = y_center + port_len // 2
+        if left_side_dist < right_side_dist:
+            x_outer = cdrom_box[port_x_idx] + safe_distance_from_cdrom
+            x_inner = x_outer - port_width
+        else:
+            x_outer = cdrom_box[port_x_idx] - safe_distance_from_cdrom
+            x_inner = x_outer + port_width
+        
+        cdrom_cut_paths.append(
+            [(x_inner, y_upper), (x_outer, y_upper), (x_outer, y_lower), (x_inner, y_lower)])
+        if interpolate:
+            interpolated_cut_path = []
+            for cut_path in cdrom_cut_paths:
+                interpolated_cut_path.append(interpolate_path(cut_path, npoints=npoints))
+            cdrom_cut_paths = interpolated_cut_path
+        
+        return cdrom_cut_paths
+        
+            
     def free_areas_detection(self, detections, img, tol=0, use_depth=False, draw=False):
         other_boxes = []
         for cname in self.cname_to_cid.keys():
@@ -620,9 +677,9 @@ class Model:
         my2 = min(img.shape[1] - 1, my2 + tol)
         free_area_img = deepcopy(img)
         free_area_img[: my1 + tol, :, :] = 0
-        free_area_img[:, : mx1 + tol :] = 0
-        free_area_img[my2 - tol :, :, :] = 0
-        free_area_img[:, mx2 - tol :, :] = 0
+        free_area_img[:, : mx1 + tol:] = 0
+        free_area_img[my2 - tol:, :, :] = 0
+        free_area_img[:, mx2 - tol:, :] = 0
         for cboxes in other_boxes:
             for box in cboxes:
                 x1, y1, x2, y2 = box[0], box[1], box[2], box[3]
@@ -645,7 +702,7 @@ class Model:
             dist_mat = self.cam_helpers.get_dist_mat_from_cam(
                 depth_topic="/camera/aligned_depth_to_color/image_raw",
                 intrinsics_topic="/camera/color/camera_info"
-                )
+            )
         picking_point = detect_picking_point(
             gray_img,
             use_center=False,
@@ -661,7 +718,8 @@ class Model:
 
     def detect_laptop_pose_data_as_pose_array(self, draw=False):
         # Get current distances of all pixels from the depth image.
-        dist_mat = self.cam_helpers.get_dist_mat_from_cam(transform_to_color=True)
+        dist_mat = self.cam_helpers.get_dist_mat_from_cam(
+            transform_to_color=True)
         # Detect the laptop pose data (laptop_center, flipping_point, upper_point) as pixels
         laptop_data_px, dist_image = detect_laptop_pose(
             dist_mat,
@@ -674,7 +732,8 @@ class Model:
             z_max=self.limits["z_max"],
         )
         # Deproject the pixels representing laptop pose data to xyz 3d pose data.
-        laptop_pose_data = self.cam_helpers.px_to_xyz(laptop_data_px, dist_mat=dist_mat)
+        laptop_pose_data = self.cam_helpers.px_to_xyz(
+            laptop_data_px, dist_mat=dist_mat)
 
         # Put the data in a PoseArray and return it
         laptop_data_pose_array = xyz_list_to_pose_array(laptop_pose_data)
@@ -723,7 +782,8 @@ class Model:
         port_boxes = []
         for cname in ["Port", "Connector"]:
             port_boxes.extend(
-                self.get_class_detections(detections=detections, class_name=cname)
+                self.get_class_detections(
+                    detections=detections, class_name=cname)
             )
 
         # Plan the Cutting Path.
@@ -927,7 +987,8 @@ if __name__ == "__main__":
         ns + "/publish_flipping_plan_data", False
     )
     publish_cut_path = rospy.get_param(ns + "/publish_cut_path", False)
-    publish_screw_centers = rospy.get_param(ns + "/publish_screw_centers", False)
+    publish_screw_centers = rospy.get_param(
+        ns + "/publish_screw_centers", False)
     use_state = rospy.get_param(ns + "/use_state", True)
 
     model = Model(

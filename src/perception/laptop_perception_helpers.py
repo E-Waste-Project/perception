@@ -493,9 +493,9 @@ def detect_picking_point(
         print("num of indices = ", len(indices))
         for i in range(xyz.shape[0]):
             x, y, z = xyz[i, 0], xyz[i, 1], xyz[i, 2]
-            x_cond = np.isclose(x - 0.036, xyz[:, 0], rtol=5e-3, atol=5e-3)
-            y_cond = np.isclose(y, xyz[:, 1], rtol=5e-3, atol=5e-3)
-            z_cond = np.isclose(z, xyz[:, 2], rtol=2e-3, atol=2e-3)
+            x_cond = np.isclose(x - 0.036, xyz[:, 0], rtol=0, atol=5e-3)
+            y_cond = np.isclose(y, xyz[:, 1], rtol=0, atol=5e-3)
+            z_cond = np.isclose(z, xyz[:, 2], rtol=0, atol=2e-3)
             indices = np.where(np.logical_and(x_cond, np.logical_and(y_cond, z_cond)))
             if indices[0].shape[0] >= 1:
                 print(indices)
