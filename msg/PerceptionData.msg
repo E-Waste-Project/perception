@@ -1,5 +1,6 @@
 std_msgs/Float32MultiArray screws # centers
 std_msgs/Float32MultiArray screws_near_cpu # centers
+std_msgs/Float32MultiArray fan_screws # cut path(s)
 std_msgs/Float32MultiArray back_cover_cut_path # cut path
 std_msgs/Float32MultiArray motherboard # gripping points
 std_msgs/Float32MultiArray fan # center

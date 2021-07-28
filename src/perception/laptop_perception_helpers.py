@@ -1250,6 +1250,23 @@ def constrain_environment(dist_mat, x_lim, y_lim, z_lim):
     dist_image *= x_thresh * y_thresh * z_thresh
     return dist_image
 
+def find_nearest_point_with_non_zero_depth(dist_mat, point):
+    center = deepcopy(point)
+    print("prev_center = ", center)
+    print("dist_mat_shape = ", dist_mat.shape)
+    print(dist_mat[:, center[1], center[0]])
+    non_zero_indices = np.where(dist_mat[2, :, :] > 0.1)
+    print("min_z = ", np.min(dist_mat[2, non_zero_indices[0], non_zero_indices[1]]))
+    print(dist_mat[2, non_zero_indices[0], non_zero_indices[1]]) 
+    non_zero_arr = np.row_stack(non_zero_indices).T
+    # print("non_zero_arr = ", non_zero_arr)
+    points_dist = euclidean_dist_array(non_zero_arr, (center[1], center[0]))
+    # print("points_dist = ", points_dist)
+    center_idx = np.argsort(points_dist)
+    center = [non_zero_indices[1][center_idx[0]], non_zero_indices[0][center_idx[0]]]
+    print("next_center = ", center)
+    print(dist_mat[:, center[1], center[0]])
+    return center
 
 def detect_laptop_pose(
     dist_mat, x_min=-2, x_max=2, y_min=-2, y_max=2, z_min=0, z_max=4, draw=False
@@ -1265,25 +1282,24 @@ def detect_laptop_pose(
     draw_on = color_img if draw else None
     laptop_data_px = detect_laptop(dist_image, draw_on=draw_on)
     center = laptop_data_px[0:2]
-    print("prev_center = ", center)
-    print("dist_mat_shape = ", dist_mat.shape)
-    print(dist_mat[:, center[1], center[0]])
-    non_zero_indices = np.where(dist_mat[2, :, :] > 0.1)
-    print("min_z = ", np.min(dist_mat[2, non_zero_indices[0], non_zero_indices[1]]))
-    print(dist_mat[2, non_zero_indices[0], non_zero_indices[1]]) 
-    non_zero_arr = np.row_stack(non_zero_indices).T
-    # print("non_zero_arr = ", non_zero_arr)
-    points_dist = euclidean_dist_array(non_zero_arr, (center[1], center[0]))
-    # print("points_dist = ", points_dist)
-    center_idx = np.argsort(points_dist)
-    center = [non_zero_indices[1][center_idx[0]], non_zero_indices[0][center_idx[0]]]
-    print("next_center = ", center)
-    print(dist_mat[:, center[1], center[0]])
+    center = find_nearest_point_with_non_zero_depth(dist_mat, center)
     laptop_data_px[0], laptop_data_px[1] = center[0], center[1]
     if draw:
         cv2.circle(draw_on, tuple(center), 5, (255, 255, 0), thickness=-1)
     return laptop_data_px, color_img
 
+def filter_xyz_list(xyz_list):
+    xyz_arr = np.array(xyz_list).reshape((-1, 3))
+    print("xyz_arr_shape_before_filter = ", xyz_arr.shape)
+    median_z = np.median(xyz_arr[:, 2])
+    indices_to_remove = []
+    for i in range(xyz_arr.shape[0]):
+        if ( (abs(xyz_arr[i, 2]-median_z)>=0.05) or (xyz_arr[i, 2] <= 0.26) ):
+                indices_to_remove.append(i)
+    xyz_arr = np.delete(xyz_arr, indices_to_remove, axis=0) 
+    print("xyz_arr_shape_after_filter", xyz_arr.shape)         
+    xyz_list = xyz_arr.reshape((-1,)).tolist()
+    return xyz_list
 
 def xyz_list_to_pose_array(xyz_list):
     pose_array = PoseArray()
@@ -1310,6 +1326,14 @@ class RealsenseHelpers:
             self.intrinsics_topic = "/camera/color/camera_info"
         self.extrinsics_topic = "/camera/extrinsics/depth_to_color"
 
+    def boxes_px_to_xyz(self, boxes, dist_mat, preprocessor=box_to_center, filter_data=False):
+        boxes_xyz_list = []
+        for box in boxes:
+            processed_box = preprocessor(box)
+            xyz_list = self.px_to_xyz(px_data=processed_box, dist_mat=dist_mat, filter_data=filter_data)
+            boxes_xyz_list.extend(xyz_list)
+        return boxes_xyz_list
+    
     def px_to_xyz(
         self,
         px_data,
@@ -1317,25 +1341,29 @@ class RealsenseHelpers:
         intrinsics=None,
         dist_mat=None,
         px_data_format="list",
+        reversed_pixels=False,
+        filter_data=False
     ):
         if dist_mat is None:
             dist_mat = self.calculate_dist_3D(depth_img, intrinsics)
         data_xyz = []
         i = 0
-        while True:
+        while i < len(px_data):
             if px_data_format == "list_of_tuples":
                 x_px, y_px = px_data[i]
-                i += 1
             else:
                 x_px = px_data[i]
                 y_px = px_data[i + 1]
-                i += 2
-
+            (x_px , y_px) = (y_px, x_px) if reversed_pixels else (x_px, y_px)
+            if filter_data:
+                (x_px , y_px) = find_nearest_point_with_non_zero_depth(dist_mat, (x_px , y_px))
             xyz = dist_mat[:, y_px, x_px].tolist()
             data_xyz.extend(xyz)
-            if i >= (len(px_data)):
-                break
+            i += 1 if px_data_format == "list_of_tuples" else 2
         return data_xyz
+
+    def xyz_to_pose_array(self, xyz_list):
+        return xyz_list_to_pose_array(xyz_list)
 
     def transform_depth_to_color_frame(self, dist_mat, extrinsics):
         r = np.array(extrinsics.rotation)
