@@ -4,12 +4,14 @@ from bisect import bisect_right, bisect_left
 from copy import deepcopy
 from perception.coco_datasets import convert_format
 from math import fabs, sqrt, sin, cos, pi
+import pyrealsense2 as rs2
+
 from realsense2_camera.msg import Extrinsics
 from sensor_msgs.msg import CameraInfo, Image
 from geometry_msgs.msg import PoseArray, Pose
-
 import ros_numpy
 import rospy
+
 
 
 class Rect:
@@ -151,14 +153,15 @@ def draw_lines(image_np, points_list):
         )
 
 
-def draw_boxes(image, boxes, color=(0, 255, 0), thickness=2, draw_center=False):
+def draw_boxes(image, boxes, color=(0, 255, 0), thickness=2, draw_center=False, in_format=('x1', 'y1', 'w', 'h')):
     for box in boxes:
+        conv_box = convert_format(box, in_format=in_format)
         cv2.rectangle(
-            image, tuple(box[0:2]), (box[0] + box[2], box[1] + box[3]), color, thickness
+            image, tuple(conv_box[0:2]), tuple(conv_box[2:4]), color, thickness
         )
         if draw_center:
             cv2.circle(
-                image, (box[0] + box[2] // 2, box[1] + box[3] // 2), 1, color, thickness
+                image, box_to_center(conv_box, in_format=('x1', 'y1', 'x2', 'y2')), 1, color, thickness
             )
 
 
@@ -1254,7 +1257,10 @@ def find_nearest_point_with_non_zero_depth(dist_mat, point):
     center = deepcopy(point)
     print("prev_center = ", center)
     print("dist_mat_shape = ", dist_mat.shape)
-    print(dist_mat[:, center[1], center[0]])
+    point = dist_mat[:, center[1], center[0]]
+    print(point)
+    if 0.26 < point[2] < 0.4:
+        return center
     non_zero_indices = np.where(dist_mat[2, :, :] > 0.1)
     print("min_z = ", np.min(dist_mat[2, non_zero_indices[0], non_zero_indices[1]]))
     print(dist_mat[2, non_zero_indices[0], non_zero_indices[1]]) 
@@ -1318,20 +1324,28 @@ def xyz_list_to_pose_array(xyz_list):
 
 class RealsenseHelpers:
     def __init__(self, raw_depth=True):
+        self.color_intrin_topic = "/camera/color/camera_info"
+        self.depth_intrin_topic = "/camera/depth/camera_info"
+        self.depth_to_color_extrin_topic = "/camera/extrinsics/depth_to_color"
+        self.raw_depth_topic = "/camera/depth/image_rect_raw"
+        self.aligned_depth_topic = "/camera/aligned_depth_to_color/image_raw"
         if raw_depth:
-            self.depth_topic = "/camera/depth/image_rect_raw"
-            self.intrinsics_topic = "/camera/depth/camera_info"
+            self.depth_topic = self.raw_depth_topic
+            self.intrinsics_topic = self.depth_intrin_topic
         else:
-            self.depth_topic = "/camera/aligned_depth_to_color/image_raw"
-            self.intrinsics_topic = "/camera/color/camera_info"
+            self.depth_topic = self.aligned_depth_topic
+            self.intrinsics_topic = self.color_intrin_topic
         self.extrinsics_topic = "/camera/extrinsics/depth_to_color"
 
-    def boxes_px_to_xyz(self, boxes, dist_mat, preprocessor=box_to_center, filter_data=False):
+    def boxes_px_to_xyz(self, boxes, dist_mat, preprocessor=box_to_center, filter_data=False, return_as="1d"):
         boxes_xyz_list = []
         for box in boxes:
             processed_box = preprocessor(box)
             xyz_list = self.px_to_xyz(px_data=processed_box, dist_mat=dist_mat, filter_data=filter_data)
-            boxes_xyz_list.extend(xyz_list)
+            if return_as == "1d":
+                boxes_xyz_list.extend(xyz_list)
+            elif return_as == "2d":
+                boxes_xyz_list.append(xyz_list)
         return boxes_xyz_list
     
     def px_to_xyz(
@@ -1341,48 +1355,85 @@ class RealsenseHelpers:
         intrinsics=None,
         dist_mat=None,
         px_data_format="list",
+        return_as='1d',
         reversed_pixels=False,
         filter_data=False
     ):
+        
+        if len(px_data) < 1:
+            return []
+        
         if dist_mat is None:
+            if depth_img is None:
+                depth_img_msg = rospy.wait_for_message(self.aligned_depth_topic, Image)
+                depth_img = ros_numpy.numpify(depth_img_msg)
+            if intrinsics is None:
+                intrinsics = rospy.wait_for_message(self.color_intrin_topic, CameraInfo)
             dist_mat = self.calculate_dist_3D(depth_img, intrinsics)
-        data_xyz = []
-        i = 0
-        while i < len(px_data):
-            if px_data_format == "list_of_tuples":
-                x_px, y_px = px_data[i]
-            else:
-                x_px = px_data[i]
-                y_px = px_data[i + 1]
-            (x_px , y_px) = (y_px, x_px) if reversed_pixels else (x_px, y_px)
-            if filter_data:
-                (x_px , y_px) = find_nearest_point_with_non_zero_depth(dist_mat, (x_px , y_px))
-            xyz = dist_mat[:, y_px, x_px].tolist()
-            data_xyz.extend(xyz)
-            i += 1 if px_data_format == "list_of_tuples" else 2
+
+        px_data_arr = np.array(px_data).T.reshape((2, -1), order='F')
+        (x_idx, y_idx) = (0, 1) if not reversed_pixels else (1, 0)
+        xyz_arr = dist_mat[:, px_data_arr[y_idx], px_data_arr[x_idx]]
+        
+        if return_as == "1d":
+            # 'F' means to read/write data from rows then when finished go to next column,
+            # Check this https://docs.oracle.com/cd/E19957-01/805-4940/z400091044d0/index.html
+            xyz_arr = np.reshape(xyz_arr, (-1,), order='F') 
+        data_xyz = xyz_arr.tolist()
         return data_xyz
 
     def xyz_to_pose_array(self, xyz_list):
         return xyz_list_to_pose_array(xyz_list)
 
-    def transform_depth_to_color_frame(self, dist_mat, extrinsics):
+    def get_depth_to_color_extrinsics(self):
+        extrinsics = rospy.wait_for_message(self.depth_to_color_extrin_topic, Extrinsics)
+        return extrinsics
+    
+    def get_depth_to_color_transform(self, extrinsics=None):
+        if extrinsics is None:
+            extrinsics = rospy.wait_for_message(self.depth_to_color_extrin_topic, Extrinsics)
         r = np.array(extrinsics.rotation)
         t = np.array(extrinsics.translation)
         transform_mat = np.zeros((3, 4))
         transform_mat[:, -1] = t
-        transform_mat[:, :-1] = r.reshape((3, 3))
-        modified_dist_mat = np.ones((4, dist_mat.shape[1] * dist_mat.shape[2]))
+        transform_mat[:, :-1] = r.reshape((3, 3), order='F')
+        return transform_mat
+    
+    def get_color_to_depth_extrinsics(self):
+        extrinsics = self.get_depth_to_color_extrinsics()
+        transform_mat_3x4 = self.get_depth_to_color_transform(extrinsics)
+        transform_mat = np.zeros((4, 4))
+        transform_mat[:-1, :] = transform_mat_3x4
+        transform_mat[-1, -1] = 1
+        inverse_transform_mat = np.linalg.inv(transform_mat)
+        print("Original_transform_mat = ", transform_mat)
+        print("Inverse_transform_mat = ", inverse_transform_mat)
+        extrinsics.rotation = inverse_transform_mat[:3, :3].reshape((9,)).tolist()
+        extrinsics.translation = inverse_transform_mat[:3, -1].reshape((3,)).tolist()
+        return extrinsics
+    
+    def get_color_to_depth_transform(self, dist_mat):
+        extrinsics = self.get_color_to_depth_extrinsics()
+        return self.transform_using_extrinsics(dist_mat, extrinsics)
+    
+    def transform_using_extrinsics(self, dist_mat, extrinsics):
+        transform_mat = self.get_depth_to_color_transform(extrinsics)
+        modified_dist_mat = np.ones((4, np.prod(dist_mat.shape[1:], axis=0)))
         modified_dist_mat[:-1, :] = dist_mat.reshape((3, -1))
         return np.dot(transform_mat, modified_dist_mat).reshape(dist_mat.shape)
 
+    def get_intrinsics(self, intrinsics_topic):
+        return rospy.wait_for_message(intrinsics_topic, CameraInfo)
+    
     def get_intrinsics_as_dict_from_intrinsics_camera_info(self, intrinsics):
-        intr = {"fx": 0, "fy": 0, "px": 0, "py": 0, "w": 0, "h": 0}
+        intr = {"fx": 0, "fy": 0, "px": 0, "py": 0, "w": 0, "h": 0, "distortion_model":""}
         intr["fx"] = intrinsics.K[0]
         intr["fy"] = intrinsics.K[4]
         intr["px"] = intrinsics.K[2]
         intr["py"] = intrinsics.K[5]
         intr["w"] = intrinsics.width
         intr["h"] = intrinsics.height
+        intr['distortion_model'] = intrinsics.distortion_model
         return intr
 
     def calculate_dist_3D(self, depth_img, intrinsics):
@@ -1395,6 +1446,13 @@ class RealsenseHelpers:
         dist_mat[1] = (index_mat[0] - intr["py"]) * depth_img / intr["fy"]
         dist_mat[2] = depth_img
         return dist_mat
+    
+    def calculate_pixels_from_points(self, dist_mat, intrinsics):
+        intr = self.get_intrinsics_as_dict_from_intrinsics_camera_info(intrinsics)
+        pixel_mat = np.zeros((2, dist_mat.shape[1]))
+        pixel_mat[0] = ((dist_mat[0] / dist_mat[2]) * intr["fx"]) + intr["px"] 
+        pixel_mat[1] = ((dist_mat[1] / dist_mat[2]) * intr["fy"]) + intr["py"]
+        return pixel_mat.astype(np.uint16)
 
     def get_dist_mat_from_cam(
         self,
@@ -1412,8 +1470,22 @@ class RealsenseHelpers:
         if transform_to_color:
             # Get the extrinsics data and transform data in dist_mat from depth camera frame to color frame.
             extrinsics = rospy.wait_for_message(extrinsics_topic, Extrinsics)
-            dist_mat = self.transform_depth_to_color_frame(dist_mat, extrinsics)
+            dist_mat = self.transform_using_extrinsics(dist_mat, extrinsics)
         return dist_mat
+    
+    def point_to_pixel(self, point, intrinsics):
+        intrinsics = self.get_intrinsics_as_dict_from_intrinsics_camera_info(intrinsics)
+        pixel = rs2.rs2_project_point_to_pixel(intrinsics, point)
+        return pixel
+    
+    def color_pixels_to_depth_pixels(self, color_px, dist_mat, depth_intrin, color_to_depth_extrin):
+        # Give me a 2d/1d list of pixels
+        points = self.px_to_xyz(color_px, dist_mat=dist_mat, px_data_format="list_of_tuples", return_as="2d")
+        points = np.array(points) # (3, npoints)
+        points_transformed = self.transform_using_extrinsics(points, color_to_depth_extrin)
+        pixels = np.round(self.calculate_pixels_from_points(points_transformed, depth_intrin)).astype(np.uint16)
+        return pixels
+
 
 
 def adjust_hole_center(image, hole_boxes):

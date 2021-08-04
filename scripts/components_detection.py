@@ -20,6 +20,7 @@ from perception.laptop_perception_helpers import (
     find_nearest_point_with_non_zero_depth,
     filter_xyz_list,
 )
+import pyrealsense2 as rs2
 from robot_helpers.srv import TransformPoses, CreateFrameAtPose, CreateFrame
 from perception.msg import PerceptionData
 import sys
@@ -164,6 +165,8 @@ class Model:
         self.image_win = "image_window"
         self.depth_win = "depth_window"
         self.imshow_thread = ImshowThread()
+        self.dist_mat = None
+        self.dist_image = None
 
         # dictionary to convert class id to class name
         self.cid_to_cname = {
@@ -221,12 +224,14 @@ class Model:
         yolo_draw = True
         depth_draw = True
         draw = True
+        
         # Recieve an image msg from camera topic, then, return image and detections.
         image, detections = self.recieve_and_detect(draw=yolo_draw)
         self.dist_mat_aligned = self.cam_helpers.get_dist_mat_from_cam(
             depth_topic="/camera/aligned_depth_to_color/image_raw",
             intrinsics_topic="/camera/color/camera_info",
         )
+        
         # Create/Update frame at the current camera ref frame
         frame_data = {
             "ref_frame": String("base_link"),
@@ -238,12 +243,14 @@ class Model:
         # Get laptop pose and flipping plan data (laptop_center, flipping_point, upper_point)
         (
             laptop_data_pose_array,
-            dist_mat,
-            dist_image,
+            self.dist_mat,
+            self.dist_image,
+            laptop_data_px,
         ) = self.detect_laptop_pose_data_as_pose_array(draw=depth_draw)
         laptop_box_poses = laptop_data_pose_array.poses[3:]
         laptop_data_pose_array.poses = laptop_data_pose_array.poses[0:3]
         self.laptop_box = []
+        self.laptop_box_px = [laptop_data_px[6], laptop_data_px[7], laptop_data_px[10], laptop_data_px[11]]
         for pose in laptop_box_poses:
             self.laptop_box.extend([pose.position.x, pose.position.y, pose.position.z])
         print("Laptop_box = ", self.laptop_box)
@@ -251,6 +258,7 @@ class Model:
         # Transform laptop_center from calibrated_frame to base_link
         laptop_center_pose_array = PoseArray()
         laptop_center_pose_array.poses.append(deepcopy(laptop_data_pose_array.poses[0]))
+        print(laptop_center_pose_array)
         transformation_data = {
             "ref_frame": String("calibrated_frame"),
             "target_frame": String("base_link"),
@@ -272,10 +280,9 @@ class Model:
             "/create_frame_at_pose", CreateFrameAtPose, inputs=frame_data
         )
 
-        # Generate the cover cutting path, and screw holes from given detections and image to visulaise on.
         cover_cut_path, screw_holes, cover_type = self.generate_cover_cutting_path(
             image,
-            detections,
+            detections,        # Generate the cover cutting path, and screw holes from given detections and image to visulaise on.
             min_screw_score=0,
             tol=40,
             method=1,
@@ -299,29 +306,15 @@ class Model:
                 image=image,
             )
 
-        if cover_type == "Laptop_Back_Cover":
-            screw_holes, skipped_holes = self.filter_screws_near_object(
-                screw_holes,
-                detections,
-                object_class="Fan",
-                dist_as_side_ratio=0.5,
-                draw=draw,
-                image=image,
-            )
-            
-        fan_screws = []
-        if (
-            len(self.get_class_detections(detections, "Motherboard", best_only=True))
-            > 0
-        ):
-            screw_holes, fan_screws = self.filter_screws_near_object(
-                screw_holes,
-                detections,
-                object_class="Fan",
-                dist_as_side_ratio=0.5,
-                draw=draw,
-                image=image,
-            )
+        # Filter and find fan_screws in screw_holes
+        screw_holes, fan_screws = self.filter_screws_near_object(
+            screw_holes,
+            detections,
+            object_class="Fan",
+            dist_as_side_ratio=0.5,
+            draw=draw,
+            image=image,
+        )
 
 
         # Generate the ports cutting path from given detections and image to visulaise on.
@@ -538,8 +531,8 @@ class Model:
 
         key = 0
         if draw or yolo_draw or depth_draw:
-            # self.imshow_thread.show_frame(image, dist_image)
-            cv2.imshow(self.depth_win, dist_image)
+            # self.imshow_thread.show_frame(image, self.dist_image)
+            cv2.imshow(self.depth_win, self.dist_image)
             key = cv2.waitKey(0) & 0xFF
             cv2.imshow(self.image_win, image)
             key = cv2.waitKey(0) & 0xFF
@@ -926,7 +919,7 @@ class Model:
         laptop_pose_data = self.cam_helpers.px_to_xyz(laptop_data_px, dist_mat=dist_mat)
         # Put the data in a PoseArray and return it
         laptop_data_pose_array = xyz_list_to_pose_array(laptop_pose_data)
-        return laptop_data_pose_array, dist_mat, dist_image
+        return laptop_data_pose_array, dist_mat, dist_image, laptop_data_px
 
     def generate_rectangular_cutting_path(
         self, boxes, interpolate=False, npoints=20, image=None, draw=False
@@ -1051,50 +1044,24 @@ class Model:
             detections=detections, class_name=box_cname, get_scores=True
         )
         if len(cover_boxes) < 1:
-            box_cname = "front_cover"
-            # Get detected laptop_covers.
-            cover_boxes, cover_scores = self.get_class_detections(
-                detections=detections, class_name=box_cname, get_scores=True
-            )
-            if len(cover_boxes) < 1:
-                cover_boxes, cover_scores = self.get_class_detections(
-                    detections=detections, class_name="keyboard", get_scores=True
-                )
-                bay_cover_boxes, bay_cover_scores = self.get_class_detections(
-                    detections=detections, class_name="keyboard_bay", get_scores=True
-                )
-                pad_cover_boxes, pad_cover_scores = self.get_class_detections(
-                    detections=detections, class_name="mouse_pad", get_scores=True
-                )
-                if len(cover_boxes) >= 1:
-                    cover_boxes = [
-                        [
-                            cb[0] - 50,
-                            cb[1] - 50,
-                            cb[2] + 2 * 50,
-                            cb[3] + 2 * 50,
-                        ]
-                        for cb in cover_boxes
-                    ]
-                elif len(bay_cover_boxes) >= 1:
-                    cover_boxes = bay_cover_boxes
-                    cover_scores = bay_cover_scores
-                    cover_boxes = [
-                        [
-                            cb[0] - 50,
-                            cb[1] - 50,
-                            cb[2] + 2 * 50,
-                            cb[3] + 2 * 50,
-                        ]
-                        for cb in cover_boxes
-                    ]
-                elif len(pad_cover_boxes) < 1:
-                    box_cname = ""
+            box_cname = ""
+            for cname in ("front_cover", "keyboard", "keyboard_bay", "mouse_pad"):
+                if self.cname_to_cid[cname] in detections["detection_classes"]:
+                    boxes, scores = self.get_class_detections(
+                        detections=detections, class_name=cname, get_scores=True
+                        )
+                    if len(boxes) > 0:
+                        box_cname = "front_cover"
+                        break
 
+        best_cover_box = []
+        if box_cname != "":
+            best_cover_box = convert_format(self.laptop_box_px, in_format=('x1', 'y1', 'x2', 'y2'), out_format=('x1', 'y1', 'w', 'h'))
+        
         screw_boxes = self.get_class_detections(
             detections=detections, class_name="Screw", min_score=min_screw_score
         )
-
+        
         screw_boxes = [
             [
                 sb[0] - hole_tol,
@@ -1107,23 +1074,14 @@ class Model:
 
         # # Adjust screw centers
         # screw_boxes = correct_circles(image_np, screw_boxes)
-
+        
         # Visualise detected screws/ports/connectors.
         if draw:
             draw_boxes(image_np, screw_boxes, draw_center=True)
 
-        best_cover_box = []
-        if len(cover_boxes) > 0:
-            # Get laptop_cover with highest confidence.
-            best_cover_score = 0
-            for box, score in zip(cover_boxes, cover_scores):
-                if score > best_cover_score:
-                    best_cover_score = score
-                    best_cover_box = box
-
-            # Visualise detected laptop_cover/Motherboard
-            if draw:
-                draw_boxes(image_np, [best_cover_box])
+        # Visualise detected laptop_cover
+        if draw and len(best_cover_box) > 0:
+            draw_boxes(image_np, [best_cover_box])
 
         if filter_screws:
             screw_boxes = filter_boxes_from_image(
@@ -1131,6 +1089,22 @@ class Model:
             )
             # Visualise detected screws.
             draw_boxes(image_np, screw_boxes, color=(0, 0, 255))
+        
+        screw_boxes = [convert_format(sb) for sb in screw_boxes]
+        for sb in screw_boxes:
+            for i in range(2):
+                new_point = find_nearest_point_with_non_zero_depth(self.dist_mat_aligned, sb[i*2:i*2+2])
+                sb[i*2], sb[i*2+1] = new_point[0], new_point[1]
+                
+        depth_intrin = self.cam_helpers.get_intrinsics(self.cam_helpers.depth_intrin_topic)
+        color_to_depth_extrin = self.cam_helpers.get_color_to_depth_extrinsics()
+        screw_boxes_arr = np.array(screw_boxes).reshape((-1, 2), order='C')
+        print("screw_box_arr = ", screw_boxes_arr)
+        screw_pixels = self.cam_helpers.color_pixels_to_depth_pixels(screw_boxes_arr, self.dist_mat_aligned, depth_intrin, color_to_depth_extrin)
+        screw_boxes = np.array(screw_pixels).T.reshape((-1, 4), order='C').tolist()
+        if draw:
+            draw_boxes(self.dist_image, screw_boxes, (255, 0, 0), in_format=('x1', 'y1', 'x2', 'y2'))
+        screw_boxes = [convert_format(sb, in_format=('x1', 'y1', 'x2', 'y2'), out_format=('x1', 'y1', 'w', 'h')) for sb in screw_boxes]
 
         # Plan the Cutting Path.
         cut_path = []
@@ -1150,7 +1124,7 @@ class Model:
 
             # Visualise the cutting path.
             if draw:
-                draw_lines(image_np, cut_path)
+                draw_lines(self.dist_image, cut_path)
 
         return cut_path, screw_boxes, box_cname
 
