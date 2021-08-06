@@ -268,7 +268,7 @@ def preprocess(input_img, **kwargs):
     clahe = cv2.createCLAHE(
         clipLimit=2.0, tileGridSize=(clahe_kernel, clahe_kernel))
     output_img = clahe.apply(input_img)
-    print(median_sz)
+
     output_img = cv2.medianBlur(output_img, ksize=median_sz)
 
     output_img = cv2.GaussianBlur(output_img, (gauss_kernel, gauss_kernel), 0)
@@ -350,7 +350,7 @@ def detect_laptop(input_img, draw_on=None, **kwargs):
         rect = cv2.minAreaRect(cnt)
         box = cv2.boxPoints(rect)
         box = np.int0(box)
-        clamp_pixels = 40
+        clamp_pixels = 0
         xs = list(enumerate([box[0], box[1], box[2], box[3]]))
         xs.sort(key=lambda x: x[1][0])
 
@@ -946,7 +946,7 @@ def interpolate(p1, p2, step):
     if p2 == p1:
         return [p1]
     sign = int(abs(p2 - p1) / (p2 - p1))
-    print("step = ", step, "sign  = ", sign)
+    # print("step = ", step, "sign  = ", sign)
     return list(range(p1, p2, max(step, 1) * sign))
 
 
@@ -1297,7 +1297,7 @@ def find_nearest_point_with_non_zero_depth(dist_mat, point, min_depth=0.26, max_
     print("prev_center = ", center)
     print("dist_mat_shape = ", dist_mat.shape)
     point = dist_mat[:, center[1], center[0]]
-    print(point)
+    print("prev_3d_pos = ", point)
     if min_depth < point[2] < max_depth:
         return center
     non_zero_indices = np.where(min_depth <= np.logical_and(
@@ -1313,8 +1313,8 @@ def find_nearest_point_with_non_zero_depth(dist_mat, point, min_depth=0.26, max_
     center_idx = np.argsort(points_dist)
     center = [non_zero_indices[1][center_idx[0]],
               non_zero_indices[0][center_idx[0]]]
-    print("next_center = ", center)
-    print(dist_mat[:, center[1], center[0]])
+    print("new_center = ", center)
+    print("new_3d_pos = ", dist_mat[:, center[1], center[0]])
     return center
 
 
@@ -1336,12 +1336,13 @@ def detect_laptop_pose(
     laptop_data_px[0], laptop_data_px[1] = center[0], center[1]
     if draw:
         cv2.circle(draw_on, tuple(center), 5, (255, 255, 0), thickness=-1)
-    return laptop_data_px, color_img
+    return laptop_data_px, color_img, dist_image
 
 
 def filter_xyz_list(xyz_list):
     xyz_arr = np.array(xyz_list).reshape((-1, 3))
     print("xyz_arr_shape_before_filter = ", xyz_arr.shape)
+    print("xyz_arr = ", xyz_arr)
     median_z = np.median(xyz_arr[:, 2])
     indices_to_remove = []
     for i in range(xyz_arr.shape[0]):
@@ -1439,10 +1440,12 @@ class RealsenseHelpers:
             self.depth_to_color_extrin_topic, Extrinsics)
         return extrinsics
 
-    def get_depth_to_color_transform(self, extrinsics=None):
-        if extrinsics is None:
-            extrinsics = rospy.wait_for_message(
-                self.depth_to_color_extrin_topic, Extrinsics)
+    def get_depth_to_color_transform(self):
+        extrinsics = rospy.wait_for_message(
+            self.depth_to_color_extrin_topic, Extrinsics)
+        return self.get_transform_from_extrinsics(extrinsics)
+    
+    def get_transform_from_extrinsics(self, extrinsics):
         r = np.array(extrinsics.rotation)
         t = np.array(extrinsics.translation)
         transform_mat = np.zeros((3, 4))
@@ -1450,27 +1453,47 @@ class RealsenseHelpers:
         transform_mat[:, :-1] = r.reshape((3, 3), order='F')
         return transform_mat
 
-    def get_color_to_depth_extrinsics(self):
-        extrinsics = self.get_depth_to_color_extrinsics()
-        transform_mat_3x4 = self.get_depth_to_color_transform(extrinsics)
+    def get_inverse_transform(self, transform_mat_3x4):
         transform_mat = np.zeros((4, 4))
         transform_mat[:-1, :] = transform_mat_3x4
         transform_mat[-1, -1] = 1
         inverse_transform_mat = np.linalg.inv(transform_mat)
-        print("Original_transform_mat = ", transform_mat)
-        print("Inverse_transform_mat = ", inverse_transform_mat)
-        extrinsics.rotation = inverse_transform_mat[:3, :3].reshape(
-            (9,)).tolist()
-        extrinsics.translation = inverse_transform_mat[:3, -1].reshape(
+        return inverse_transform_mat[:3,:]
+    
+    def get_color_to_depth_extrinsics(self, depth_to_color_extrinsics=None, depth_to_color_transform=None):
+        if depth_to_color_transform is None:
+            if depth_to_color_extrinsics is None:
+                depth_to_color_extrinsics = self.get_depth_to_color_extrinsics()
+            depth_to_color_transform = self.get_transform_from_extrinsics(
+                depth_to_color_extrinsics)
+        inverse_transform_mat = self.get_inverse_transform(
+            depth_to_color_transform)
+        # print("Original_transform_mat = ", transform_mat)
+        # print("Inverse_transform_mat = ", inverse_transform_mat)
+        color_to_depth_extrinsics = Extrinsics()
+        color_to_depth_extrinsics.rotation = inverse_transform_mat[:3, :3].reshape(
+            (9,), order='F').tolist()
+        color_to_depth_extrinsics.translation = inverse_transform_mat[:3, -1].reshape(
             (3,)).tolist()
-        return extrinsics
+        return color_to_depth_extrinsics
 
-    def get_color_to_depth_transform(self, dist_mat):
-        extrinsics = self.get_color_to_depth_extrinsics()
-        return self.transform_using_extrinsics(dist_mat, extrinsics)
+    def get_color_to_depth_transform(self, color_to_depth_extrinsics=None, depth_to_color_extrinsics=None, depth_to_color_transform=None):
+        if color_to_depth_extrinsics is None:
+            if depth_to_color_transform is None:
+                if depth_to_color_extrinsics is None:
+                    depth_to_color_extrinsics = self.get_depth_to_color_extrinsics()
+                depth_to_color_transform = self.get_transform_from_extrinsics(
+                    depth_to_color_extrinsics)
+            color_to_depth_transform = self.get_inverse_transform(depth_to_color_transform)
+        else:
+            color_to_depth_transform = self.get_transform_from_extrinsics(color_to_depth_extrinsics)
+        return color_to_depth_transform
 
-    def transform_using_extrinsics(self, dist_mat, extrinsics):
-        transform_mat = self.get_depth_to_color_transform(extrinsics)
+    def apply_cam_to_cam_transform(self, dist_mat, transform_mat=None, extrinsics=None, invert_transform=False):
+        if transform_mat is None:
+            transform_mat = self.get_transform_from_extrinsics(extrinsics)
+        if invert_transform:
+            transform_mat = self.get_inverse_transform(transform_mat)
         modified_dist_mat = np.ones((4, np.prod(dist_mat.shape[1:], axis=0)))
         modified_dist_mat[:-1, :] = dist_mat.reshape((3, -1))
         return np.dot(transform_mat, modified_dist_mat).reshape(dist_mat.shape)
@@ -1496,7 +1519,7 @@ class RealsenseHelpers:
         depth_img = depth_img * 0.001
         if index_mat is None:
             index_mat = np.indices(depth_img.shape[:2])
-            print(index_mat.shape)
+            # print(index_mat.shape)
         dist_mat = np.zeros((3, *depth_img.shape))
         dist_mat[0] = (index_mat[1] - intr["px"]) * depth_img / intr["fx"]
         dist_mat[1] = (index_mat[0] - intr["py"]) * depth_img / intr["fy"]
@@ -1532,7 +1555,8 @@ class RealsenseHelpers:
         if transform_to_color:
             # Get the extrinsics data and transform data in dist_mat from depth camera frame to color frame.
             extrinsics = rospy.wait_for_message(extrinsics_topic, Extrinsics)
-            dist_mat = self.transform_using_extrinsics(dist_mat, extrinsics)
+            dist_mat = self.apply_cam_to_cam_transform(
+                dist_mat, extrinsics=extrinsics)
         return dist_mat
 
     def adjust_pixels_to_boundary(self, pixels, size):
@@ -1547,20 +1571,16 @@ class RealsenseHelpers:
         from_px,
         dist_mat,
         to_cam_intrin,
-        cam_to_cam_extrin,
-        depth_range=False):
+        cam_to_cam_extrin):
 
         # Give me a 2d/1d list of pixels
         points = self.px_to_xyz(from_px, dist_mat=dist_mat, return_as="2d")
-        points = np.array(points)  # (3, npoints)
-        if depth_range:
-            points = np.column_stack(
-                [points * ((points[2]+i)/points[2]) for i in [-0.15, 0.1]]
-            )
-            # points = np.column_stack([points * ((points[2]+i*0.1)/points[2]) for i in range(-2, 3, 1)])
+        print("points = ", points)
+        points = filter_xyz_list(np.array(points).T)
+        points = np.array(points).reshape((3, -1), order='F')  # (3, npoints)
         if cam_to_cam_extrin is not None:
-            points = self.transform_using_extrinsics(
-                points, cam_to_cam_extrin)
+            points = self.apply_cam_to_cam_transform(
+                points, extrinsics=cam_to_cam_extrin)
         pixels = np.round(self.calculate_pixels_from_points(
             points, to_cam_intrin)).astype(np.uint16)
         pixels = self.adjust_pixels_to_boundary(
@@ -1569,7 +1589,7 @@ class RealsenseHelpers:
         return pixels
 
 
-    def color_pixels_to_depth_pixels(
+    def color_pixels_to_depth_pixels_and_back(
             self,
             color_px,
             dist_mat_aligned,
@@ -1584,15 +1604,10 @@ class RealsenseHelpers:
                                                                      dist_mat_aligned,
                                                                      depth_intrin,
                                                                      color_to_depth_extrin,
-                                                                     depth_range=True)
+                                                                     depth_range=False)
         depth_pixels = depth_pixels.T
         color_pixels = self.cam_pixels_to_other_cam_pixels_unaligned(
             depth_pixels, dist_mat, color_intrin, depth_to_color_extrin)
-        color_pixels = np.reshape(color_pixels, (2, color_pixels.shape[1] // 2, 2))
-        size = (dist_mat.shape[2], dist_mat.shape[1])
-        for i in [0, 1]:
-            color_pixels[i, :, 0] = np.maximum(0, color_pixels[i, :, 0] - 5)
-            color_pixels[i, :, 1] = np.minimum(size[i], color_pixels[i, :, 1] + 5)
         return color_pixels.reshape((2, -1))
 
 
