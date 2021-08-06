@@ -13,7 +13,6 @@ import ros_numpy
 import rospy
 
 
-
 class Rect:
 
     color_dict = {"b": (255, 0, 0), "g": (0, 255, 0), "r": (0, 0, 255)}
@@ -27,7 +26,7 @@ class Rect:
         self.y2 = self.y + self.h
 
     def crop_img(self, input_img):
-        return input_img[self.y : self.y2, self.x : self.x2].copy()
+        return input_img[self.y: self.y2, self.x: self.x2].copy()
 
     def draw_on(self, input_img, color="g", thickness=1):
         if color not in self.color_dict.keys():
@@ -139,6 +138,15 @@ def scale_contour(cnt, scale):
     return cnt_scaled, (cx, cy)
 
 
+def sample_from_func(start, func, step_sz, n_steps):
+    return [func(start+step_sz*i) for i in range(n_steps)]
+
+
+def get_line_func(p1, p2):
+    slope = (p2[1] - p1[1]) / (p2[0] - p1[0])
+    return lambda x: p2[1] - slope * (p2[0] - x)
+
+
 def read_and_resize(directory, img_id, size=(720, 480), compression=".jpg"):
     read_img = cv2.imread(directory + str(img_id) + compression)
     if size is not None:
@@ -149,7 +157,8 @@ def read_and_resize(directory, img_id, size=(720, 480), compression=".jpg"):
 def draw_lines(image_np, points_list):
     for i in range(len(points_list) - 1):
         cv2.line(
-            image_np, tuple(points_list[i]), tuple(points_list[i + 1]), (0, 0, 255), 2
+            image_np, tuple(points_list[i]), tuple(
+                points_list[i + 1]), (0, 0, 255), 2
         )
 
 
@@ -161,7 +170,8 @@ def draw_boxes(image, boxes, color=(0, 255, 0), thickness=2, draw_center=False, 
         )
         if draw_center:
             cv2.circle(
-                image, box_to_center(conv_box, in_format=('x1', 'y1', 'x2', 'y2')), 1, color, thickness
+                image, box_to_center(conv_box, in_format=(
+                    'x1', 'y1', 'x2', 'y2')), 1, color, thickness
             )
 
 
@@ -255,7 +265,8 @@ def preprocess(input_img, **kwargs):
     thresh1 = kwargs.get("thresh1", 42)
     thresh2 = kwargs.get("thresh2", 111)
 
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(clahe_kernel, clahe_kernel))
+    clahe = cv2.createCLAHE(
+        clipLimit=2.0, tileGridSize=(clahe_kernel, clahe_kernel))
     output_img = clahe.apply(input_img)
     print(median_sz)
     output_img = cv2.medianBlur(output_img, ksize=median_sz)
@@ -269,7 +280,8 @@ def preprocess(input_img, **kwargs):
     if use_canny:
         output_img = cv2.Canny(output_img, thresh1, thresh2)
 
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (morph_kernel, morph_kernel))
+    kernel = cv2.getStructuringElement(
+        cv2.MORPH_RECT, (morph_kernel, morph_kernel))
     if dilate:
         output_img = cv2.dilate(output_img, kernel, iterations=iterations)
     output_img = cv2.morphologyEx(
@@ -293,7 +305,7 @@ def filter_contours(input_contours, **kwargs):
         start = bisect_left(contours_feature, min_val)
     if max_val is not None:
         end = bisect_right(contours_feature, max_val)
-        filtered_contours = sorted_contours[start : end + 1]
+        filtered_contours = sorted_contours[start: end + 1]
     else:
         filtered_contours = sorted_contours[start:]
     if not reverse:
@@ -346,11 +358,14 @@ def detect_laptop(input_img, draw_on=None, **kwargs):
         box[xs[1][0]][0] += clamp_pixels
         box[xs[2][0]][0] -= clamp_pixels
         box[xs[3][0]][0] -= clamp_pixels
-        
+
         left_points = box[0:2]
-        (upper_left_corner, lower_left_corner) = (xs[0][1], xs[1][1]) if xs[0][1][1] < xs[1][1][1] else (xs[1][1], xs[0][1])
-        (upper_right_corner, lower_right_corner) = (xs[2][1], xs[3][1]) if xs[2][1][1] < xs[3][1][1] else (xs[3][1], xs[2][1])
-        box_list = [upper_left_corner, upper_right_corner, lower_right_corner, lower_left_corner]
+        (upper_left_corner, lower_left_corner) = (
+            xs[0][1], xs[1][1]) if xs[0][1][1] < xs[1][1][1] else (xs[1][1], xs[0][1])
+        (upper_right_corner, lower_right_corner) = (
+            xs[2][1], xs[3][1]) if xs[2][1][1] < xs[3][1][1] else (xs[3][1], xs[2][1])
+        box_list = [upper_left_corner, upper_right_corner,
+                    lower_right_corner, lower_left_corner]
 
         # Retrieve the key parameters of the rotated bounding box
         center = (int(rect[0][0]), int(rect[0][1]))
@@ -358,7 +373,6 @@ def detect_laptop(input_img, draw_on=None, **kwargs):
         height = int(rect[1][1])
         angle = int(rect[2])
 
-        
         if width < height:
             angle = 90 - angle
             nw = (width // 2) * sin(angle * pi / 180)
@@ -381,24 +395,30 @@ def detect_laptop(input_img, draw_on=None, **kwargs):
             flip_point[1],
             upper_point[0],
             upper_point[1],
-            box_list[0][0], # upper left corner x
-            box_list[0][1], # upper left corner y
-            box_list[1][0], # upper right corner x
-            box_list[1][1], # upper right corner y
-            box_list[2][0], # lower right corner x
-            box_list[2][1], # lower right corner y
-            box_list[3][0], # lower left corner x
-            box_list[2][1] # lower left corner y
+            box_list[0][0],  # upper left corner x
+            box_list[0][1],  # upper left corner y
+            box_list[1][0],  # upper right corner x
+            box_list[1][1],  # upper right corner y
+            box_list[2][0],  # lower right corner x
+            box_list[2][1],  # lower right corner y
+            box_list[3][0],  # lower left corner x
+            box_list[2][1]  # lower left corner y
         ]
         if draw_on is not None:
             cv2.drawContours(draw_on, [box], 0, (0, 255, 0), thickness=5)
-            cv2.circle(draw_on, (center[0], center[1]), 10, (255, 0, 0), thickness=-1)
-            cv2.circle(draw_on, (flip_point[0], flip_point[1]), 10, (0, 255, 0), thickness=-1)
-            cv2.circle(draw_on, (upper_point[0], upper_point[1]), 10, (0, 0, 255), thickness=-1)
-            
-            cv2.circle(draw_on, (box_list[0][0], box_list[0][1]), 10, (255, 0, 0), thickness=-1)
-            cv2.circle(draw_on, (box_list[1][0], box_list[1][1]), 10, (0, 255, 0), thickness=-1)
-            cv2.circle(draw_on, (box_list[2][0], box_list[2][1]), 10, (0, 0, 255), thickness=-1)
+            cv2.circle(draw_on, (center[0], center[1]),
+                       10, (255, 0, 0), thickness=-1)
+            cv2.circle(
+                draw_on, (flip_point[0], flip_point[1]), 10, (0, 255, 0), thickness=-1)
+            cv2.circle(
+                draw_on, (upper_point[0], upper_point[1]), 10, (0, 0, 255), thickness=-1)
+
+            cv2.circle(
+                draw_on, (box_list[0][0], box_list[0][1]), 10, (255, 0, 0), thickness=-1)
+            cv2.circle(
+                draw_on, (box_list[1][0], box_list[1][1]), 10, (0, 255, 0), thickness=-1)
+            cv2.circle(
+                draw_on, (box_list[2][0], box_list[2][1]), 10, (0, 0, 255), thickness=-1)
         return laptop_data
     else:
         return None
@@ -442,8 +462,10 @@ def detect_picking_point(
     x, y, w, h = cv2.boundingRect(cnt)
     cv2.rectangle(draw_on, (x, y), (x + w, y + h), (0, 255, 0), 2)
     cv2.drawContours(draw_on, [cnt], 0, (255, 0, 0), 2)
-    cv2.drawContours(filled_cnt_img, [scaled_cnt], 0, (255, 255, 255), thickness=-1)
-    cv2.circle(draw_on, (x + w // 2, y + h // 2), 5, color=(0, 255, 0), thickness=2)
+    cv2.drawContours(filled_cnt_img, [scaled_cnt],
+                     0, (255, 255, 255), thickness=-1)
+    cv2.circle(draw_on, (x + w // 2, y + h // 2),
+               5, color=(0, 255, 0), thickness=2)
     mother_pixels = np.where(filled_cnt_img > 0)
     mother_pixels = list(mother_pixels)
     points_indices = np.row_stack(mother_pixels).T
@@ -469,7 +491,8 @@ def detect_picking_point(
         print("dist_after", points_dist.shape)
         if method == 1:
             first_n_percent = int(0.5 * points_depth.shape[0])
-            indices = np.argsort(np.abs(points_depth))[: max(first_n_percent, 1)]
+            indices = np.argsort(np.abs(points_depth))[
+                : max(first_n_percent, 1)]
             points_dist = points_dist[indices]
             points_depth = points_depth[indices]
             mother_pixels[0] = mother_pixels[0][indices]
@@ -499,7 +522,8 @@ def detect_picking_point(
             x_cond = np.isclose(x - 0.036, xyz[:, 0], rtol=0, atol=5e-3)
             y_cond = np.isclose(y, xyz[:, 1], rtol=0, atol=5e-3)
             z_cond = np.isclose(z, xyz[:, 2], rtol=0, atol=2e-3)
-            indices = np.where(np.logical_and(x_cond, np.logical_and(y_cond, z_cond)))
+            indices = np.where(np.logical_and(
+                x_cond, np.logical_and(y_cond, z_cond)))
             if indices[0].shape[0] >= 1:
                 print(indices)
                 idx = indices[0][-1]
@@ -510,9 +534,10 @@ def detect_picking_point(
                 other_finger_picking_point = (
                     mother_pixels[1][other_finger_picking_point_idx],
                     mother_pixels[0][other_finger_picking_point_idx],
-                    )
+                )
                 if draw_on is not None:
-                    cv2.circle(draw_on, other_finger_picking_point, 10, color=(255, 0, 0), thickness=-1)
+                    cv2.circle(draw_on, other_finger_picking_point,
+                               10, color=(255, 0, 0), thickness=-1)
                 break
             else:
                 print("No similar point for picking_point = ", xyz[i, :])
@@ -525,7 +550,8 @@ def detect_picking_point(
     )
     if draw_on is not None:
         cv2.circle(draw_on, picking_point, 10, color=(0, 0, 255), thickness=-1)
-        cv2.circle(draw_on, (point[1], point[0]), 10, color=(0, 255, 0), thickness=2)
+        cv2.circle(draw_on, (point[1], point[0]),
+                   10, color=(0, 255, 0), thickness=2)
     return picking_point
 
 
@@ -740,7 +766,8 @@ def custom_path_method(
             holes_near_edge = list(
                 filter(
                     lambda hole: (
-                        hole.y - min_hole_dist <= edges[edge] <= hole.y2 + min_hole_dist
+                        hole.y -
+                        min_hole_dist <= edges[edge] <= hole.y2 + min_hole_dist
                     ),
                     filtered_holes_coords,
                 )
@@ -749,7 +776,8 @@ def custom_path_method(
             holes_near_edge = list(
                 filter(
                     lambda hole: (
-                        hole.x - min_hole_dist <= edges[edge] <= hole.x2 + min_hole_dist
+                        hole.x -
+                        min_hole_dist <= edges[edge] <= hole.x2 + min_hole_dist
                     ),
                     filtered_holes_coords,
                 )
@@ -888,7 +916,8 @@ def custom_path_method(
                                 cut_path[p_idx - 1][0] = new_point_x
                         else:
                             if (
-                                cut_path[p_idx - 1][0] >= new_point_x and edge == "left"
+                                cut_path[p_idx -
+                                         1][0] >= new_point_x and edge == "left"
                             ) or (
                                 cut_path[p_idx - 1][0] <= new_point_x
                                 and edge == "right"
@@ -985,7 +1014,8 @@ def plan_cover_cutting_path(
         if holes_coords is not None:
             holes_coords = [Rect(*hole) for hole in deepcopy(holes_coords)]
     else:
-        raise ValueError("Either provide an input image or the laptop coordinates")
+        raise ValueError(
+            "Either provide an input image or the laptop coordinates")
 
     # Assign The Coordinates of The initial Bounding Box To Be Cut by taking a tolerance from laptop bounding box.
     cut_rect = Rect(
@@ -1114,16 +1144,20 @@ def plan_port_cutting_path(
 
     # Get ports that are near each edge.
     ports_near_left_edge = list(
-        filter(lambda coord: (coord.x - ned <= left <= coord.x2 + ned), ports_coords)
+        filter(lambda coord: (coord.x - ned <=
+               left <= coord.x2 + ned), ports_coords)
     )
     ports_near_lower_edge = list(
-        filter(lambda coord: (coord.y - ned <= lower <= coord.y2 + ned), ports_coords)
+        filter(lambda coord: (coord.y - ned <=
+               lower <= coord.y2 + ned), ports_coords)
     )
     ports_near_right_edge = list(
-        filter(lambda coord: (coord.x - ned <= right <= coord.x2 + ned), ports_coords)
+        filter(lambda coord: (coord.x - ned <=
+               right <= coord.x2 + ned), ports_coords)
     )
     ports_near_upper_edge = list(
-        filter(lambda coord: (coord.y - ned <= upper <= coord.y2 + ned), ports_coords)
+        filter(lambda coord: (coord.y - ned <=
+               upper <= coord.y2 + ned), ports_coords)
     )
 
     # Sort ports to be in the direction of motion of each edge.
@@ -1168,16 +1202,20 @@ def plan_port_cutting_path(
                 for p_idx, port in enumerate(port_group):
                     if port == vertical_port:
                         if len(port_group) >= len(vertical_port_group):
-                            vertical_ports_to_remove.append((vg_idx, vertical_port))
+                            vertical_ports_to_remove.append(
+                                (vg_idx, vertical_port))
                         else:
-                            ports_to_remove_near_lower_edge.append((pg_idx, port))
+                            ports_to_remove_near_lower_edge.append(
+                                (pg_idx, port))
             for pg_idx, port_group in enumerate(port_groups_near_upper_edge):
                 for p_idx, port in enumerate(port_group):
                     if port == vertical_port:
                         if len(port_group) >= len(vertical_port_group):
-                            vertical_ports_to_remove.append((vg_idx, vertical_port))
+                            vertical_ports_to_remove.append(
+                                (vg_idx, vertical_port))
                         else:
-                            ports_to_remove_near_upper_edge.append((pg_idx, port))
+                            ports_to_remove_near_upper_edge.append(
+                                (pg_idx, port))
     [
         port_groups_near_lower_edge[g_idx].remove(p_idx)
         for g_idx, p_idx in ports_to_remove_near_lower_edge
@@ -1253,26 +1291,32 @@ def constrain_environment(dist_mat, x_lim, y_lim, z_lim):
     dist_image *= x_thresh * y_thresh * z_thresh
     return dist_image
 
-def find_nearest_point_with_non_zero_depth(dist_mat, point):
+
+def find_nearest_point_with_non_zero_depth(dist_mat, point, min_depth=0.26, max_depth=0.4):
     center = deepcopy(point)
     print("prev_center = ", center)
     print("dist_mat_shape = ", dist_mat.shape)
     point = dist_mat[:, center[1], center[0]]
     print(point)
-    if 0.26 < point[2] < 0.4:
+    if min_depth < point[2] < max_depth:
         return center
-    non_zero_indices = np.where(dist_mat[2, :, :] > 0.1)
-    print("min_z = ", np.min(dist_mat[2, non_zero_indices[0], non_zero_indices[1]]))
-    print(dist_mat[2, non_zero_indices[0], non_zero_indices[1]]) 
+    non_zero_indices = np.where(min_depth <= np.logical_and(
+        dist_mat[2, :, :] <= max_depth, dist_mat[2, :, :] >= min_depth))
+    print("min_z = ", np.min(
+        dist_mat[2, non_zero_indices[0], non_zero_indices[1]]))
+    print("depth_values_in_range = ",
+          dist_mat[2, non_zero_indices[0], non_zero_indices[1]])
     non_zero_arr = np.row_stack(non_zero_indices).T
     # print("non_zero_arr = ", non_zero_arr)
     points_dist = euclidean_dist_array(non_zero_arr, (center[1], center[0]))
     # print("points_dist = ", points_dist)
     center_idx = np.argsort(points_dist)
-    center = [non_zero_indices[1][center_idx[0]], non_zero_indices[0][center_idx[0]]]
+    center = [non_zero_indices[1][center_idx[0]],
+              non_zero_indices[0][center_idx[0]]]
     print("next_center = ", center)
     print(dist_mat[:, center[1], center[0]])
     return center
+
 
 def detect_laptop_pose(
     dist_mat, x_min=-2, x_max=2, y_min=-2, y_max=2, z_min=0, z_max=4, draw=False
@@ -1294,18 +1338,20 @@ def detect_laptop_pose(
         cv2.circle(draw_on, tuple(center), 5, (255, 255, 0), thickness=-1)
     return laptop_data_px, color_img
 
+
 def filter_xyz_list(xyz_list):
     xyz_arr = np.array(xyz_list).reshape((-1, 3))
     print("xyz_arr_shape_before_filter = ", xyz_arr.shape)
     median_z = np.median(xyz_arr[:, 2])
     indices_to_remove = []
     for i in range(xyz_arr.shape[0]):
-        if ( (abs(xyz_arr[i, 2]-median_z)>=0.05) or (xyz_arr[i, 2] <= 0.26) ):
-                indices_to_remove.append(i)
-    xyz_arr = np.delete(xyz_arr, indices_to_remove, axis=0) 
-    print("xyz_arr_shape_after_filter", xyz_arr.shape)         
+        if ((abs(xyz_arr[i, 2]-median_z) >= 0.05) or (xyz_arr[i, 2] <= 0.26)):
+            indices_to_remove.append(i)
+    xyz_arr = np.delete(xyz_arr, indices_to_remove, axis=0)
+    print("xyz_arr_shape_after_filter", xyz_arr.shape)
     xyz_list = xyz_arr.reshape((-1,)).tolist()
     return xyz_list
+
 
 def xyz_list_to_pose_array(xyz_list):
     pose_array = PoseArray()
@@ -1341,13 +1387,14 @@ class RealsenseHelpers:
         boxes_xyz_list = []
         for box in boxes:
             processed_box = preprocessor(box)
-            xyz_list = self.px_to_xyz(px_data=processed_box, dist_mat=dist_mat, filter_data=filter_data)
+            xyz_list = self.px_to_xyz(
+                px_data=processed_box, dist_mat=dist_mat, filter_data=filter_data)
             if return_as == "1d":
                 boxes_xyz_list.extend(xyz_list)
             elif return_as == "2d":
                 boxes_xyz_list.append(xyz_list)
         return boxes_xyz_list
-    
+
     def px_to_xyz(
         self,
         px_data,
@@ -1359,26 +1406,28 @@ class RealsenseHelpers:
         reversed_pixels=False,
         filter_data=False
     ):
-        
+
         if len(px_data) < 1:
             return []
-        
+
         if dist_mat is None:
             if depth_img is None:
-                depth_img_msg = rospy.wait_for_message(self.aligned_depth_topic, Image)
+                depth_img_msg = rospy.wait_for_message(
+                    self.aligned_depth_topic, Image)
                 depth_img = ros_numpy.numpify(depth_img_msg)
             if intrinsics is None:
-                intrinsics = rospy.wait_for_message(self.color_intrin_topic, CameraInfo)
+                intrinsics = rospy.wait_for_message(
+                    self.color_intrin_topic, CameraInfo)
             dist_mat = self.calculate_dist_3D(depth_img, intrinsics)
 
         px_data_arr = np.array(px_data).T.reshape((2, -1), order='F')
         (x_idx, y_idx) = (0, 1) if not reversed_pixels else (1, 0)
         xyz_arr = dist_mat[:, px_data_arr[y_idx], px_data_arr[x_idx]]
-        
+
         if return_as == "1d":
             # 'F' means to read/write data from rows then when finished go to next column,
             # Check this https://docs.oracle.com/cd/E19957-01/805-4940/z400091044d0/index.html
-            xyz_arr = np.reshape(xyz_arr, (-1,), order='F') 
+            xyz_arr = np.reshape(xyz_arr, (-1,), order='F')
         data_xyz = xyz_arr.tolist()
         return data_xyz
 
@@ -1386,19 +1435,21 @@ class RealsenseHelpers:
         return xyz_list_to_pose_array(xyz_list)
 
     def get_depth_to_color_extrinsics(self):
-        extrinsics = rospy.wait_for_message(self.depth_to_color_extrin_topic, Extrinsics)
+        extrinsics = rospy.wait_for_message(
+            self.depth_to_color_extrin_topic, Extrinsics)
         return extrinsics
-    
+
     def get_depth_to_color_transform(self, extrinsics=None):
         if extrinsics is None:
-            extrinsics = rospy.wait_for_message(self.depth_to_color_extrin_topic, Extrinsics)
+            extrinsics = rospy.wait_for_message(
+                self.depth_to_color_extrin_topic, Extrinsics)
         r = np.array(extrinsics.rotation)
         t = np.array(extrinsics.translation)
         transform_mat = np.zeros((3, 4))
         transform_mat[:, -1] = t
         transform_mat[:, :-1] = r.reshape((3, 3), order='F')
         return transform_mat
-    
+
     def get_color_to_depth_extrinsics(self):
         extrinsics = self.get_depth_to_color_extrinsics()
         transform_mat_3x4 = self.get_depth_to_color_transform(extrinsics)
@@ -1408,14 +1459,16 @@ class RealsenseHelpers:
         inverse_transform_mat = np.linalg.inv(transform_mat)
         print("Original_transform_mat = ", transform_mat)
         print("Inverse_transform_mat = ", inverse_transform_mat)
-        extrinsics.rotation = inverse_transform_mat[:3, :3].reshape((9,)).tolist()
-        extrinsics.translation = inverse_transform_mat[:3, -1].reshape((3,)).tolist()
+        extrinsics.rotation = inverse_transform_mat[:3, :3].reshape(
+            (9,)).tolist()
+        extrinsics.translation = inverse_transform_mat[:3, -1].reshape(
+            (3,)).tolist()
         return extrinsics
-    
+
     def get_color_to_depth_transform(self, dist_mat):
         extrinsics = self.get_color_to_depth_extrinsics()
         return self.transform_using_extrinsics(dist_mat, extrinsics)
-    
+
     def transform_using_extrinsics(self, dist_mat, extrinsics):
         transform_mat = self.get_depth_to_color_transform(extrinsics)
         modified_dist_mat = np.ones((4, np.prod(dist_mat.shape[1:], axis=0)))
@@ -1424,9 +1477,10 @@ class RealsenseHelpers:
 
     def get_intrinsics(self, intrinsics_topic):
         return rospy.wait_for_message(intrinsics_topic, CameraInfo)
-    
+
     def get_intrinsics_as_dict_from_intrinsics_camera_info(self, intrinsics):
-        intr = {"fx": 0, "fy": 0, "px": 0, "py": 0, "w": 0, "h": 0, "distortion_model":""}
+        intr = {"fx": 0, "fy": 0, "px": 0, "py": 0,
+                "w": 0, "h": 0, "distortion_model": ""}
         intr["fx"] = intrinsics.K[0]
         intr["fy"] = intrinsics.K[4]
         intr["px"] = intrinsics.K[2]
@@ -1436,23 +1490,32 @@ class RealsenseHelpers:
         intr['distortion_model'] = intrinsics.distortion_model
         return intr
 
-    def calculate_dist_3D(self, depth_img, intrinsics):
-        intr = self.get_intrinsics_as_dict_from_intrinsics_camera_info(intrinsics)
+    def calculate_dist_3D(self, depth_img, intrinsics, index_mat=None):
+        intr = self.get_intrinsics_as_dict_from_intrinsics_camera_info(
+            intrinsics)
         depth_img = depth_img * 0.001
-        index_mat = np.indices(depth_img.shape)
-        print(index_mat.shape)
-        dist_mat = np.zeros((3, intr["h"], intr["w"]))
+        if index_mat is None:
+            index_mat = np.indices(depth_img.shape[:2])
+            print(index_mat.shape)
+        dist_mat = np.zeros((3, *depth_img.shape))
         dist_mat[0] = (index_mat[1] - intr["px"]) * depth_img / intr["fx"]
         dist_mat[1] = (index_mat[0] - intr["py"]) * depth_img / intr["fy"]
         dist_mat[2] = depth_img
         return dist_mat
-    
+
     def calculate_pixels_from_points(self, dist_mat, intrinsics):
-        intr = self.get_intrinsics_as_dict_from_intrinsics_camera_info(intrinsics)
+        intr = self.get_intrinsics_as_dict_from_intrinsics_camera_info(
+            intrinsics)
         pixel_mat = np.zeros((2, dist_mat.shape[1]))
-        pixel_mat[0] = ((dist_mat[0] / dist_mat[2]) * intr["fx"]) + intr["px"] 
+        pixel_mat[0] = ((dist_mat[0] / dist_mat[2]) * intr["fx"]) + intr["px"]
         pixel_mat[1] = ((dist_mat[1] / dist_mat[2]) * intr["fy"]) + intr["py"]
         return pixel_mat.astype(np.uint16)
+
+    def get_depth_img_from_cam(self, depth_topic="/camera/depth/image_rect_raw"):
+        # Recieve depth image and intrinsics
+        depth_img_msg = rospy.wait_for_message(depth_topic, Image)
+        depth_img = ros_numpy.numpify(depth_img_msg)
+        return depth_img
 
     def get_dist_mat_from_cam(
         self,
@@ -1462,9 +1525,8 @@ class RealsenseHelpers:
         transform_to_color=False,
     ):
         # Recieve depth image and intrinsics
-        depth_img_msg = rospy.wait_for_message(depth_topic, Image)
-        depth_img = ros_numpy.numpify(depth_img_msg)
-        intrinsics = rospy.wait_for_message(intrinsics_topic, CameraInfo)
+        depth_img = self.get_depth_img_from_cam(depth_topic)
+        intrinsics = self.get_intrinsics(intrinsics_topic)
         # Calculate the 3d data of each pixel in the depth image and pu it in dist_mat.
         dist_mat = self.calculate_dist_3D(depth_img, intrinsics)
         if transform_to_color:
@@ -1472,20 +1534,66 @@ class RealsenseHelpers:
             extrinsics = rospy.wait_for_message(extrinsics_topic, Extrinsics)
             dist_mat = self.transform_using_extrinsics(dist_mat, extrinsics)
         return dist_mat
-    
-    def point_to_pixel(self, point, intrinsics):
-        intrinsics = self.get_intrinsics_as_dict_from_intrinsics_camera_info(intrinsics)
-        pixel = rs2.rs2_project_point_to_pixel(intrinsics, point)
-        return pixel
-    
-    def color_pixels_to_depth_pixels(self, color_px, dist_mat, depth_intrin, color_to_depth_extrin):
+
+    def adjust_pixels_to_boundary(self, pixels, size):
+        px = deepcopy(pixels)
+        for i in [0, 1]:
+            px[i] = np.where(px[i] < size[i], px[i], size[i]-1)
+            px[i] = np.where(px[i] >= 0, px[i], 0)
+        return px
+
+    def cam_pixels_to_other_cam_pixels_unaligned(
+        self,
+        from_px,
+        dist_mat,
+        to_cam_intrin,
+        cam_to_cam_extrin,
+        depth_range=False):
+
         # Give me a 2d/1d list of pixels
-        points = self.px_to_xyz(color_px, dist_mat=dist_mat, px_data_format="list_of_tuples", return_as="2d")
-        points = np.array(points) # (3, npoints)
-        points_transformed = self.transform_using_extrinsics(points, color_to_depth_extrin)
-        pixels = np.round(self.calculate_pixels_from_points(points_transformed, depth_intrin)).astype(np.uint16)
+        points = self.px_to_xyz(from_px, dist_mat=dist_mat, return_as="2d")
+        points = np.array(points)  # (3, npoints)
+        if depth_range:
+            points = np.column_stack(
+                [points * ((points[2]+i)/points[2]) for i in [-0.15, 0.1]]
+            )
+            # points = np.column_stack([points * ((points[2]+i*0.1)/points[2]) for i in range(-2, 3, 1)])
+        if cam_to_cam_extrin is not None:
+            points = self.transform_using_extrinsics(
+                points, cam_to_cam_extrin)
+        pixels = np.round(self.calculate_pixels_from_points(
+            points, to_cam_intrin)).astype(np.uint16)
+        pixels = self.adjust_pixels_to_boundary(
+            pixels, (dist_mat.shape[2], dist_mat.shape[1]))
+        
         return pixels
 
+
+    def color_pixels_to_depth_pixels(
+            self,
+            color_px,
+            dist_mat_aligned,
+            dist_mat,
+            depth_intrin,
+            color_intrin,
+            color_to_depth_extrin,
+            depth_to_color_extrin):
+
+        # Give me a 2d/1d list of pixels
+        depth_pixels = self.cam_pixels_to_other_cam_pixels_unaligned(color_px,
+                                                                     dist_mat_aligned,
+                                                                     depth_intrin,
+                                                                     color_to_depth_extrin,
+                                                                     depth_range=True)
+        depth_pixels = depth_pixels.T
+        color_pixels = self.cam_pixels_to_other_cam_pixels_unaligned(
+            depth_pixels, dist_mat, color_intrin, depth_to_color_extrin)
+        color_pixels = np.reshape(color_pixels, (2, color_pixels.shape[1] // 2, 2))
+        size = (dist_mat.shape[2], dist_mat.shape[1])
+        for i in [0, 1]:
+            color_pixels[i, :, 0] = np.maximum(0, color_pixels[i, :, 0] - 5)
+            color_pixels[i, :, 1] = np.minimum(size[i], color_pixels[i, :, 1] + 5)
+        return color_pixels.reshape((2, -1))
 
 
 def adjust_hole_center(image, hole_boxes):
@@ -1504,7 +1612,8 @@ def adjust_hole_center(image, hole_boxes):
         # cv2.waitKey(0)
         gray_crop = output
         # detect circles in the image
-        circles = cv2.HoughCircles(gray_crop, cv2.HOUGH_GRADIENT, 1.01, 1, 200, 100)
+        circles = cv2.HoughCircles(
+            gray_crop, cv2.HOUGH_GRADIENT, 1.01, 1, 200, 100)
         # ensure at least some circles were found
         if circles is not None:
             # convert the (x, y) coordinates and radius of the circles to integers
@@ -1545,9 +1654,12 @@ def correct_circles(img, circles_list):
     cv2.createTrackbar("param2", "cropped_image", param2, 500, lambda x: None)
     cv2.createTrackbar("kernel", "cropped_image", kernel, 255, lambda x: None)
     cv2.createTrackbar("k", "cropped_image", k, 20, lambda x: None)
-    cv2.createTrackbar("min_len", "cropped_image", min_len, 255, lambda x: None)
-    cv2.createTrackbar("max_len", "cropped_image", max_len, 255, lambda x: None)
-    cv2.createTrackbar("min_circ", "cropped_image", min_circ, 255, lambda x: None)
+    cv2.createTrackbar("min_len", "cropped_image",
+                       min_len, 255, lambda x: None)
+    cv2.createTrackbar("max_len", "cropped_image",
+                       max_len, 255, lambda x: None)
+    cv2.createTrackbar("min_circ", "cropped_image",
+                       min_circ, 255, lambda x: None)
     cv2.createTrackbar("sz", "cropped_image", sz, 50, lambda x: None)
     cv2.createTrackbar("dist", "cropped_image", dist, 50, lambda x: None)
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
@@ -1562,14 +1674,14 @@ def correct_circles(img, circles_list):
         while key != ord("e"):
             cropped_img = deepcopy(
                 gray[
-                    circle_old[1] : circle_old[1] + circle_old[3] + 1,
-                    circle_old[0] : circle_old[0] + circle_old[2] + 1,
+                    circle_old[1]: circle_old[1] + circle_old[3] + 1,
+                    circle_old[0]: circle_old[0] + circle_old[2] + 1,
                 ]
             )
             cropped_color_img = deepcopy(
                 img[
-                    circle_old[1] : circle_old[1] + circle_old[3] + 1,
-                    circle_old[0] : circle_old[0] + circle_old[2] + 1,
+                    circle_old[1]: circle_old[1] + circle_old[3] + 1,
+                    circle_old[0]: circle_old[0] + circle_old[2] + 1,
                 ]
             )
             param1 = max(cv2.getTrackbarPos("param1", "cropped_image"), 1)
@@ -1597,7 +1709,8 @@ def correct_circles(img, circles_list):
                 output = cv2.Canny(output, param1, param2)
 
             # kernel = np.ones((2, 2), np.uint8)
-            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_sz, kernel_sz))
+            kernel = cv2.getStructuringElement(
+                cv2.MORPH_RECT, (kernel_sz, kernel_sz))
             # Use erosion and dilation combination to eliminate false positives.
             # output = cv2.erode(output, kernel, iterations=1)
             output = cv2.dilate(output, kernel, iterations=1)
@@ -1627,9 +1740,10 @@ def correct_circles(img, circles_list):
             contours_per = list(map(cv2.contourArea, contours))
             start = bisect_left(contours_per, min_len)
             end = bisect_right(contours_per, max_len)
-            contours = contours[start : end + 1]
+            contours = contours[start: end + 1]
             contours = sorted(
-                contours, key=lambda c: (perimeter(c) / (max_len + 1)) * circularity(c)
+                contours, key=lambda c: (
+                    perimeter(c) / (max_len + 1)) * circularity(c)
             )
             contours.reverse()
 
@@ -1644,7 +1758,8 @@ def correct_circles(img, circles_list):
                 for i in range(sz):
                     contours_poly[i] = cv2.approxPolyDP(contours[i], 3, True)
                     boundRect[i] = cv2.boundingRect(contours_poly[i])
-                    centers[i], radius[i] = cv2.minEnclosingCircle(contours_poly[i])
+                    centers[i], radius[i] = cv2.minEnclosingCircle(
+                        contours_poly[i])
                 filtered_centers = list(
                     filter(
                         lambda c: euclidean_dist(c[1], old_center) <= dist,
@@ -1670,7 +1785,8 @@ def correct_circles(img, circles_list):
                     (255, 0, 0),
                     1,
                 )
-                cv2.drawContours(cropped_color_img, contours[0], -1, (0, 255, 0), 1)
+                cv2.drawContours(cropped_color_img,
+                                 contours[0], -1, (0, 255, 0), 1)
             cv2.imshow("cropped_image", cropped_color_img)
             key = cv2.waitKey(10) & 0xFF
             # center_difference = [i[0] - old_center[0],

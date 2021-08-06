@@ -182,7 +182,7 @@ class Model:
         self.cid_to_cthresh = {
             vals["id"]: vals["thresh"] for cname, vals in self.class_thresh.items()
         }
-
+        
         self.path_publisher = rospy.Publisher(
             cutting_plan_topic, Float32MultiArray, queue_size=1
         )
@@ -204,6 +204,10 @@ class Model:
 
         # Detect laptop pose parameters
         self.cam_helpers = RealsenseHelpers()
+        self.depth_intrin = self.cam_helpers.get_intrinsics(self.cam_helpers.depth_intrin_topic)
+        self.color_to_depth_extrin = self.cam_helpers.get_color_to_depth_extrinsics()
+        self.color_intrin = self.cam_helpers.get_intrinsics(self.cam_helpers.color_intrin_topic)
+        self.depth_to_color_extrin = self.cam_helpers.get_depth_to_color_extrinsics()
         self.trackbar_limits = {
             "x_min": 1802,
             "x_max": 2212,
@@ -284,7 +288,7 @@ class Model:
             image,
             detections,        # Generate the cover cutting path, and screw holes from given detections and image to visulaise on.
             min_screw_score=0,
-            tol=40,
+            tol=35,
             method=1,
             min_hole_dist=10,
             hole_tol=0,  # generated path params
@@ -479,7 +483,7 @@ class Model:
             best_only=True,
             dist_mat=self.dist_mat_aligned,
         )
-        print("keyboard_center_in_perception = ", data_msg.keyboard)
+        print("keyboard_center_in_perception = ", data_msg.keyboard.data)
         # Add detected CD-ROM.
         data_msg.cd_rom = self.get_detection_as_msg_xyz(
             detections=detections,
@@ -903,7 +907,7 @@ class Model:
 
     def detect_laptop_pose_data_as_pose_array(self, draw=False):
         # Get current distances of all pixels from the depth image.
-        dist_mat = self.cam_helpers.get_dist_mat_from_cam(transform_to_color=True)
+        dist_mat = self.cam_helpers.get_dist_mat_from_cam(transform_to_color=False)
         # Detect the laptop pose data (laptop_center, flipping_point, upper_point) as pixels
         laptop_data_px, dist_image = detect_laptop_pose(
             dist_mat,
@@ -1026,7 +1030,7 @@ class Model:
         image,
         detections,
         min_screw_score=0,
-        tol=100,
+        tol=20,
         method=0,
         min_hole_dist=3,
         hole_tol=0,
@@ -1056,6 +1060,7 @@ class Model:
 
         best_cover_box = []
         if box_cname != "":
+            print("laptop_px = ", self.laptop_box_px)
             best_cover_box = convert_format(self.laptop_box_px, in_format=('x1', 'y1', 'x2', 'y2'), out_format=('x1', 'y1', 'w', 'h'))
         
         screw_boxes = self.get_class_detections(
@@ -1071,6 +1076,18 @@ class Model:
             ]
             for sb in screw_boxes
         ]
+        best_cover_box = [
+                best_cover_box[0] + tol // 2,
+                best_cover_box[1] + tol,
+                best_cover_box[2] - 2 * tol // 2,
+                best_cover_box[3] - 2 * tol,
+            ]
+        tol=0
+        best_cover_box = convert_format(best_cover_box)
+        for i in range(2):
+            new_point = find_nearest_point_with_non_zero_depth(self.dist_mat, best_cover_box[i*2:i*2+2])
+            best_cover_box[i*2], best_cover_box[i*2+1] = new_point[0], new_point[1]
+        
 
         # # Adjust screw centers
         # screw_boxes = correct_circles(image_np, screw_boxes)
@@ -1079,52 +1096,76 @@ class Model:
         if draw:
             draw_boxes(image_np, screw_boxes, draw_center=True)
 
-        # Visualise detected laptop_cover
-        if draw and len(best_cover_box) > 0:
-            draw_boxes(image_np, [best_cover_box])
-
         if filter_screws:
             screw_boxes = filter_boxes_from_image(
                 screw_boxes, image_np, "Choose Boxes, then press 'c'"
             )
             # Visualise detected screws.
             draw_boxes(image_np, screw_boxes, color=(0, 0, 255))
+            
+        #=========================
+        # TODO: UNDER DEVELOPMENT:
+        #=========================
+        # screw_boxes = [convert_format(sb) for sb in screw_boxes]
+        # for sb in screw_boxes:
+        #     for i in range(2):
+        #         new_point = find_nearest_point_with_non_zero_depth(self.dist_mat_aligned, sb[i*2:i*2+2])
+        #         sb[i*2], sb[i*2+1] = new_point[0], new_point[1]
         
-        screw_boxes = [convert_format(sb) for sb in screw_boxes]
-        for sb in screw_boxes:
-            for i in range(2):
-                new_point = find_nearest_point_with_non_zero_depth(self.dist_mat_aligned, sb[i*2:i*2+2])
-                sb[i*2], sb[i*2+1] = new_point[0], new_point[1]
-                
-        depth_intrin = self.cam_helpers.get_intrinsics(self.cam_helpers.depth_intrin_topic)
-        color_to_depth_extrin = self.cam_helpers.get_color_to_depth_extrinsics()
-        screw_boxes_arr = np.array(screw_boxes).reshape((-1, 2), order='C')
-        print("screw_box_arr = ", screw_boxes_arr)
-        screw_pixels = self.cam_helpers.color_pixels_to_depth_pixels(screw_boxes_arr, self.dist_mat_aligned, depth_intrin, color_to_depth_extrin)
-        screw_boxes = np.array(screw_pixels).T.reshape((-1, 4), order='C').tolist()
-        if draw:
-            draw_boxes(self.dist_image, screw_boxes, (255, 0, 0), in_format=('x1', 'y1', 'x2', 'y2'))
-        screw_boxes = [convert_format(sb, in_format=('x1', 'y1', 'x2', 'y2'), out_format=('x1', 'y1', 'w', 'h')) for sb in screw_boxes]
+        # original_color_screw_boxes = deepcopy(screw_boxes) 
+        # screw_boxes_arr = np.array(screw_boxes).reshape((-1, 2), order='C')
+        # screw_pixels = self.cam_helpers.color_pixels_to_depth_pixels(screw_boxes_arr,
+        #                                                              self.dist_mat_aligned,
+        #                                                              self.dist_mat,
+        #                                                              self.depth_intrin,
+        #                                                              self.color_intrin,
+        #                                                              self.color_to_depth_extrin,
+        #                                                              self.depth_to_color_extrin)
+        # screw_boxes = np.array(screw_pixels).T.reshape((-1, 4), order='C').tolist()
+        # screw_boxes = [convert_format(sb, in_format=('x1', 'y1', 'x2', 'y2'), out_format=(
+        #     'x1', 'y1', 'w', 'h')) for sb in screw_boxes]
+        # if draw:
+        #     draw_boxes(image, screw_boxes, (0, 0, 0), in_format=('x1', 'y1', 'w', 'h'))
 
+        # print("diff = ", np.array(color_screw_boxes) - \
+        #       np.array(original_color_screw_boxes))  
+        #=====================================================================================================
+                
+        if len(best_cover_box) < 1:
+            return [], screw_boxes, box_cname
+        
+        # Transfrom Laptop Box from Depth Image to Color Image
+        best_cover_box_arr = np.array(best_cover_box).reshape((2, 2))
+        cover_box_pixels = self.cam_helpers.cam_pixels_to_other_cam_pixels_unaligned(
+            best_cover_box_arr, self.dist_mat, self.color_intrin, self.depth_to_color_extrin)
+        cover_box_pixels = np.array(cover_box_pixels).T.reshape((4,), order='C').tolist()
+        best_cover_box = convert_format(cover_box_pixels, in_format=('x1', 'y1', 'x2', 'y2'), out_format=('x1', 'y1', 'w', 'h'))
+        if draw:
+            draw_boxes(image, [best_cover_box], (0, 0, 0),
+                    in_format=('x1', 'y1', 'w', 'h'))
+            
         # Plan the Cutting Path.
         cut_path = []
-        if len(best_cover_box) > 0:
-            cut_path, holes_inside_cut_path = plan_cover_cutting_path(
-                laptop_coords=best_cover_box,
-                holes_coords=screw_boxes,
-                method=method,
-                interpolate=True,
-                npoints=200,
-                tol=tol,
-                min_hole_dist=min_hole_dist,
-            )
+        cut_path, holes_inside_cut_path = plan_cover_cutting_path(
+            laptop_coords=best_cover_box,
+            holes_coords=screw_boxes,
+            method=method,
+            interpolate=True,
+            npoints=200,
+            tol=tol,
+            min_hole_dist=min_hole_dist,
+        )
+        if return_holes_inside_cut_path and len(best_cover_box) > 0:
+            screw_boxes = holes_inside_cut_path
 
-            if return_holes_inside_cut_path and len(best_cover_box) > 0:
-                screw_boxes = holes_inside_cut_path
-
-            # Visualise the cutting path.
-            if draw:
-                draw_lines(self.dist_image, cut_path)
+        # Visualise the cutting path.
+        if draw:
+            draw_lines(image, cut_path)
+        
+        # cv2.imshow("image", image)
+        # cv2.waitKey(0)
+        # cv2.imshow("dist_image", self.dist_image)
+        # cv2.waitKey(0)
 
         return cut_path, screw_boxes, box_cname
 
