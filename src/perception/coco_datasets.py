@@ -33,24 +33,24 @@ yxyx_to_xywh_xyxy = {'x1': lambda x: x[1], 'w': lambda x: x[3] - x[1], 'y1': lam
 
 def convert_format(box, in_format=('x1', 'y1', 'w', 'h'), out_format=('x1', 'y1', 'x2', 'y2')):
     if in_format == out_format:
-      return box
+      return [int(d) for d in box]
     elif in_format == ('x1', 'y1', 'x2', 'y2') and \
        (out_format == ('x1', 'y1', 'w', 'h') or \
        out_format == ('xc', 'yc', 'w', 'h')):
-      return [xyxy_to_xywh_xcycwh[element](box) for element in out_format]
+      return [int(xyxy_to_xywh_xcycwh[element](box)) for element in out_format]
     elif in_format == ('xc', 'yc', 'w', 'h') and \
          (out_format == ('x1', 'y1', 'w', 'h') or \
          out_format == ('x1', 'y1', 'x2', 'y2')):
-      return [xcycwh_to_xywh_xyxy[element](box) for element in out_format]
+      return [int(xcycwh_to_xywh_xyxy[element](box)) for element in out_format]
     elif in_format == ('x1', 'y1', 'w', 'h') and \
          (out_format == ('x1', 'y1', 'x2', 'y2') or \
          out_format == ('xc', 'yc', 'w', 'h')):
-      return [xywh_to_xcycwh_xyxy[element](box) for element in out_format]
+      return [int(xywh_to_xcycwh_xyxy[element](box)) for element in out_format]
     elif in_format == ('y1', 'x1', 'y2', 'x2') and \
        (out_format == ('x1', 'y1', 'w', 'h') or \
        out_format == ('xc', 'yc', 'w', 'h') or \
        out_format == ('x1', 'y1', 'x2', 'y2')):
-      return [yxyx_to_xywh_xyxy[element](box) for element in out_format]
+      return [int(yxyx_to_xywh_xyxy[element](box)) for element in out_format]
     else:
       raise ValueError("Wrong Conversion")
     
