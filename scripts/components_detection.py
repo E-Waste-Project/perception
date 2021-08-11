@@ -347,15 +347,19 @@ class Model:
         print("cover_color_y = ", cover_cut_path_color[0][1])
         keyboard_cover_dist_x = keyboard[0] - cover_cut_path_color[0][0]
         keyboard_cover_dist_y = keyboard[1] - cover_cut_path_color[0][1]
-        keyboard_x_tol = 20 if keyboard_cover_dist_x > 0 else abs(keyboard_cover_dist_x) + 20
-        keyboard_y_tol = 20 if keyboard_cover_dist_y > 0 else abs(keyboard_cover_dist_y) + 20
+        # keyboard_cover_dist_x = max([cover_cut_path_color[i][0] for i in range(len(cover_cut_path_color))]) - (keyboard[0]+keyboard[2])
+        # keyboard_cover_dist_y = max([cover_cut_path_color[i][1] for i in range(len(cover_cut_path_color))]) - (keyboard[1]+keyboard[3])
+        keyboard_x1_tol = 20 if keyboard_cover_dist_x > 0 else abs(keyboard_cover_dist_x) + 20
+        keyboard_y1_tol = 20 if keyboard_cover_dist_y > 0 else abs(keyboard_cover_dist_y) + 20
+        # keyboard_x2_tol = 20 if keyboard_cover_dist_x > 0 else abs(keyboard_cover_dist_x) + 20
+        # keyboard_y2_tol = 20 if keyboard_cover_dist_y > 0 else abs(keyboard_cover_dist_y) + 20
         keyboard_cut_path = []
         if len(keyboard) > 0:
             mod_key_board = [
-                keyboard[0] + keyboard_x_tol,
-                keyboard[1] + keyboard_y_tol,
-                keyboard[2] - 2 * keyboard_x_tol,
-                keyboard[3] - 2 * keyboard_y_tol,
+                keyboard[0] + keyboard_x1_tol,
+                keyboard[1] + keyboard_y1_tol,
+                keyboard[2] - keyboard_x1_tol,
+                keyboard[3] - keyboard_y1_tol,
             ]
             keyboard_cut_path = self.generate_rectangular_cutting_path(
                 [mod_key_board], interpolate=True, npoints=200, image=image, draw=draw
@@ -1083,20 +1087,20 @@ class Model:
         image_np = image
 
         # Get detected Laptop Cover and Screws.
-        box_cname = "Laptop_Back_Cover"
-        cover_boxes, cover_scores = self.get_class_detections(
-            detections=detections, class_name=box_cname, get_scores=True
-        )
-        if len(cover_boxes) < 1:
-            box_cname = ""
-            for cname in ("front_cover", "keyboard", "keyboard_bay", "mouse_pad"):
-                if self.cname_to_cid[cname] in detections["detection_classes"]:
-                    boxes, scores = self.get_class_detections(
-                        detections=detections, class_name=cname, get_scores=True
-                    )
-                    if len(boxes) > 0:
-                        box_cname = "front_cover"
-                        break
+        box_cname = ""
+        for cname in ("front_cover", "keyboard", "keyboard_bay", "mouse_pad"):
+            if self.cname_to_cid[cname] in detections["detection_classes"]:
+                boxes, scores = self.get_class_detections(
+                    detections=detections, class_name=cname, get_scores=True
+                )
+                if len(boxes) > 0:
+                    box_cname = "front_cover"
+                    break
+        if box_cname == "":
+            boxes, scores = self.get_class_detections(
+                detections=detections, class_name=box_cname, get_scores=True)
+            if len(boxes) >= 1:
+                box_cname = "Laptop_Back_Cover"
 
         # Ignore Detected Box and Use Box Found from Depth Image.
         best_cover_box = []
@@ -1266,10 +1270,10 @@ class Model:
             if draw:
                 draw_lines(image, color_cut_path, color=(255, 255, 0))
 
-        cv2.imshow("image", image)
-        cv2.waitKey(0)
-        cv2.imshow("dist_image", self.color_dist_image)
-        cv2.waitKey(0)
+        # cv2.imshow("image", image)
+        # cv2.waitKey(0)
+        # cv2.imshow("dist_image", self.color_dist_image)
+        # cv2.waitKey(0)
         if generate_on_depth_image:
             return cut_path, original_color_screw_boxes, box_cname, color_cut_path
         else:
