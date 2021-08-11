@@ -343,6 +343,8 @@ class Model:
 
         # Generate the keyboard cut path
         keyboard = self.get_class_detections(detections, "keyboard", best_only=True)
+        print("cover_color_x = ", cover_cut_path_color[0][0])
+        print("cover_color_y = ", cover_cut_path_color[0][1])
         keyboard_cover_dist_x = keyboard[0] - cover_cut_path_color[0][0]
         keyboard_cover_dist_y = keyboard[1] - cover_cut_path_color[0][1]
         keyboard_x_tol = 20 if keyboard_cover_dist_x > 0 else abs(keyboard_cover_dist_x) + 20
@@ -961,11 +963,13 @@ class Model:
         )
 
     def generate_rectangular_cutting_path(
-        self, boxes, interpolate=False, npoints=20, image=None, draw=False
+        self, boxes, interpolate=False, npoints=20, image=None, draw=False, in_format=('x1', 'y1', 'w', 'h')
     ):
         cut_boxes = []
         for b in boxes:
-            x, y, x2, y2 = b[0], b[1], b[0] + b[2], b[1] + b[3]
+            cb = deepcopy(b)
+            cb = convert_format(cb, in_format=in_format, out_format=('x1', 'y1', 'w', 'h'))
+            x, y, x2, y2 = cb[0], cb[1], cb[0] + cb[2], cb[1] + cb[3]
             box_path = [(x, y), (x, y2), (x2, y2), (x2, y), (x, y)]
             if draw and image is not None:
                 draw_lines(image, box_path)
@@ -1224,6 +1228,7 @@ class Model:
                 )
 
         # Plan the Cutting Path.
+        print("best_cover_box = ", best_cover_box)
         cut_path = []
         cut_path, holes_inside_cut_path = plan_cover_cutting_path(
             laptop_coords=best_cover_box,
@@ -1236,6 +1241,8 @@ class Model:
         )
         if return_holes_inside_cut_path:
             screw_boxes = holes_inside_cut_path
+            
+        print("depth_cut_path = ", cut_path[0])
 
         # Visualise the cutting path.
         if draw:
@@ -1244,26 +1251,29 @@ class Model:
 
         if generate_on_depth_image:
             color_cut_path = np.array(cut_path).reshape((-1, 2), order="C")
+            print("color_cut_path_1 = ", color_cut_path[0])
             color_cut_path = self.cam_helpers.cam_pixels_to_other_cam_pixels_unaligned(
                 color_cut_path,
                 self.dist_mat,
                 self.color_intrin,
                 self.depth_to_color_extrin,
             )
+            print("color_cut_path_2 = ", (color_cut_path[0][0], color_cut_path[1][0]))
             color_cut_path = (
                 np.array(color_cut_path).T.reshape((-1, 2), order="C").tolist()
             )
-
+            print("color_cut_path_3 = ", color_cut_path)
             if draw:
-                draw_lines(image, color_cut_path)
+                draw_lines(image, color_cut_path, color=(255, 255, 0))
 
-        # cv2.imshow("image", image)
-        # cv2.waitKey(0)
-        # cv2.imshow("dist_image", self.color_dist_image)
-        # cv2.waitKey(0)
-
-        return cut_path, original_color_screw_boxes, box_cname, color_cut_path
-
+        cv2.imshow("image", image)
+        cv2.waitKey(0)
+        cv2.imshow("dist_image", self.color_dist_image)
+        cv2.waitKey(0)
+        if generate_on_depth_image:
+            return cut_path, original_color_screw_boxes, box_cname, color_cut_path
+        else:
+            return cut_path, original_color_screw_boxes, box_cname
     def construct_float_multi_array(self, path_points):
         # Publish Cutting Path.
         path_msg = Float32MultiArray()

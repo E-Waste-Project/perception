@@ -154,11 +154,11 @@ def read_and_resize(directory, img_id, size=(720, 480), compression=".jpg"):
     return read_img
 
 
-def draw_lines(image_np, points_list):
+def draw_lines(image_np, points_list, color=(0, 0, 255)):
     for i in range(len(points_list) - 1):
         cv2.line(
             image_np, tuple(points_list[i]), tuple(
-                points_list[i + 1]), (0, 0, 255), 2
+                points_list[i + 1]), color, 2
         )
 
 
@@ -1532,6 +1532,14 @@ class RealsenseHelpers:
         pixel_mat = np.zeros((2, dist_mat.shape[1]))
         pixel_mat[0] = ((dist_mat[0] / dist_mat[2]) * intr["fx"]) + intr["px"]
         pixel_mat[1] = ((dist_mat[1] / dist_mat[2]) * intr["fy"]) + intr["py"]
+        wrong_indices = np.argwhere(pixel_mat[0] < 0)
+        pixel_mat[0, wrong_indices] = 0
+        wrong_indices = np.argwhere(pixel_mat[1] < 0)
+        pixel_mat[1, wrong_indices] = 0
+        print ("px", intr["px"])
+        print ("py", intr["py"])
+        print ("fx", intr["fx"])
+        print ("fy", intr["fy"])
         return pixel_mat.astype(np.uint16)
 
     def get_depth_img_from_cam(self, depth_topic="/camera/depth/image_rect_raw"):
@@ -1575,14 +1583,23 @@ class RealsenseHelpers:
 
         # Give me a 2d/1d list of pixels
         points = self.px_to_xyz(from_px, dist_mat=dist_mat, return_as="2d")
-        print("points = ", points)
         points = filter_xyz_list(np.array(points).T)
         points = np.array(points).reshape((3, -1), order='F')  # (3, npoints)
+        wrong_points = np.where(np.logical_or(points[2] <= 0.26, points[2] >= 0.4))
+        print("wrong_points = ", wrong_points)
         if cam_to_cam_extrin is not None:
             points = self.apply_cam_to_cam_transform(
                 points, extrinsics=cam_to_cam_extrin)
-        pixels = np.round(self.calculate_pixels_from_points(
-            points, to_cam_intrin)).astype(np.uint16)
+        points = filter_xyz_list(points.T.tolist())
+        points = np.array(points).reshape((3, -1), order='F')  # (3, npoints)
+        wrong_points = np.where(np.logical_or(points[2] <= 0.26, points[2] >= 0.4))
+        print("points_y = ", points[1])
+        print("points_z = ", points[2])
+        print("wrong_points = ", wrong_points)
+        pixels = self.calculate_pixels_from_points(points, to_cam_intrin)
+        print("pixels_before_round = ", pixels)
+        pixels = np.round(pixels).astype(np.uint16)
+        print("pixels_before_adjustment = ", pixels)
         pixels = self.adjust_pixels_to_boundary(
             pixels, (dist_mat.shape[2], dist_mat.shape[1]))
         
