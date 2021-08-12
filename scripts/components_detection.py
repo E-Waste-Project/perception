@@ -345,16 +345,16 @@ class Model:
         keyboard = self.get_class_detections(detections, "keyboard", best_only=True)
         print("cover_color_x = ", cover_cut_path_color[0][0])
         print("cover_color_y = ", cover_cut_path_color[0][1])
-        keyboard_cover_dist_x = keyboard[0] - cover_cut_path_color[0][0]
-        keyboard_cover_dist_y = keyboard[1] - cover_cut_path_color[0][1]
-        # keyboard_cover_dist_x = max([cover_cut_path_color[i][0] for i in range(len(cover_cut_path_color))]) - (keyboard[0]+keyboard[2])
-        # keyboard_cover_dist_y = max([cover_cut_path_color[i][1] for i in range(len(cover_cut_path_color))]) - (keyboard[1]+keyboard[3])
-        keyboard_x1_tol = 20 if keyboard_cover_dist_x > 0 else abs(keyboard_cover_dist_x) + 20
-        keyboard_y1_tol = 20 if keyboard_cover_dist_y > 0 else abs(keyboard_cover_dist_y) + 20
-        # keyboard_x2_tol = 20 if keyboard_cover_dist_x > 0 else abs(keyboard_cover_dist_x) + 20
-        # keyboard_y2_tol = 20 if keyboard_cover_dist_y > 0 else abs(keyboard_cover_dist_y) + 20
         keyboard_cut_path = []
         if len(keyboard) > 0:
+            keyboard_cover_dist_x = keyboard[0] - cover_cut_path_color[0][0]
+            keyboard_cover_dist_y = keyboard[1] - cover_cut_path_color[0][1]
+            # keyboard_cover_dist_x = max([cover_cut_path_color[i][0] for i in range(len(cover_cut_path_color))]) - (keyboard[0]+keyboard[2])
+            # keyboard_cover_dist_y = max([cover_cut_path_color[i][1] for i in range(len(cover_cut_path_color))]) - (keyboard[1]+keyboard[3])
+            keyboard_x1_tol = 20 if keyboard_cover_dist_x > 0 else abs(keyboard_cover_dist_x) + 20
+            keyboard_y1_tol = 20 if keyboard_cover_dist_y > 0 else abs(keyboard_cover_dist_y) + 20
+            # keyboard_x2_tol = 20 if keyboard_cover_dist_x > 0 else abs(keyboard_cover_dist_x) + 20
+            # keyboard_y2_tol = 20 if keyboard_cover_dist_y > 0 else abs(keyboard_cover_dist_y) + 20
             mod_key_board = [
                 keyboard[0] + keyboard_x1_tol,
                 keyboard[1] + keyboard_y1_tol,
@@ -1254,7 +1254,7 @@ class Model:
             draw_lines(draw_on, cut_path)
 
         if generate_on_depth_image:
-            color_cut_path = np.array(cut_path).reshape((-1, 2), order="C")
+            color_cut_path = np.array(deepcopy(cut_path)).reshape((-1, 2), order="C")
             print("color_cut_path_1 = ", color_cut_path[0])
             color_cut_path = self.cam_helpers.cam_pixels_to_other_cam_pixels_unaligned(
                 color_cut_path,
