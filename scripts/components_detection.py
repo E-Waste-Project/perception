@@ -487,7 +487,7 @@ class Model:
         fan_screw_boxes = self.cam_helpers.boxes_px_to_xyz(
             fan_screws, dist_mat=self.dist_mat_aligned, filter_data=True
         )
-        data_msg.fan_screws = self.construct_float_multi_array(fan_screw_boxes)
+        data_msg.fan_screws = self.construct_float_multi_array_xyz(fan_screw_boxes)
 
         # Add cdrom cut paths
         cdrom_cut_paths = self.generate_cdrom_cut_path(
