@@ -19,7 +19,8 @@ from perception.laptop_perception_helpers import (
     xyz_list_to_pose_array,
     find_nearest_point_with_non_zero_depth,
     filter_xyz_list,
-    find_nearest_box_points_with_non_zero_depth
+    find_nearest_box_points_with_non_zero_depth,
+    draw_boxes_on_image
 )
 import pyrealsense2 as rs2
 from robot_helpers.srv import TransformPoses, CreateFrameAtPose, CreateFrame
@@ -341,7 +342,7 @@ class Model:
         )
 
         # Generate the ports cutting path from given detections and image to visulaise on.
-        ports_cut_path = self.generate_ports_cutting_path(image, detections, draw=draw)
+        ports_cut_path = self.generate_ports_cutting_path(image, detections, draw=draw, add_ports_manually=True)
 
         # Generate the screws cut paths
         screws_cut_path = self.generate_rectangular_cutting_path(
@@ -991,7 +992,7 @@ class Model:
             cut_boxes.append(box_path)
         return cut_boxes
 
-    def generate_ports_cutting_path(self, image, detections, draw=True):
+    def generate_ports_cutting_path(self, image, detections, draw=True, add_ports_manually=False):
         """Generate a cutting path and publish it."""
 
         image_np = image
@@ -1023,7 +1024,8 @@ class Model:
             port_boxes.extend(
                 self.get_class_detections(detections=detections, class_name=cname)
             )
-
+        if add_ports_manually:
+            port_boxes.extend(draw_boxes_on_image(image, "Draw Port Boxes"))
         # Plan the Cutting Path.
         ports_cut_paths = []
         if len(best_box) > 0 and len(port_boxes) > 0:

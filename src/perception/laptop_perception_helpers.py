@@ -277,6 +277,74 @@ def filter_boxes_from_image(boxes, image, window_name, create_new_window=True):
                 filtered_boxes.append(box)
     return filtered_boxes
 
+def draw_boxes_on_image(image, window_name, create_new_window=True):
+
+    print("=======================================================================")
+    print("Choose boxes by drawing them on the image, Press 'c' when finished")
+    print("=======================================================================")
+
+    refPt = []
+    curr_xy = []
+    img = image.copy()
+    if create_new_window:
+        cv2.namedWindow(window_name)
+    down_pressed = False
+    key = 0
+    def choose_screw(event, x, y, flags, param):
+        # global img
+        # global key
+        # global down_pressed
+        # global curr_xy
+        # global refPt
+        curr_xy.clear()
+        curr_xy.append([x, y])
+        img = image.copy()
+        # if the left mouse button was clicked, record the point
+        if event == cv2.EVENT_LBUTTONDOWN:
+            refPt.append([])
+            refPt[-1].extend([x, y])
+            # draw a rectangle around the region of interest
+            # cv2.circle(img, refPt[-1], 2, (0, 255, 0), 1)
+            down_pressed = True
+        if event == cv2.EVENT_LBUTTONUP:
+            refPt[-1].extend([x, y])
+            # draw a rectangle around the region of interest
+            # cv2.circle(img, refPt[-1], 2, (0, 255, 0), 1)
+            down_pressed = False
+
+        # if down_pressed and event == cv2.EVENT_MOUSEMOVE:
+        #     cv2.rectangle(img, (refPt[-1][0], refPt[-1][1]), (x, y), (0, 0, 255), 2)
+            
+    cv2.setMouseCallback(window_name, choose_screw)
+
+    # Show image and wait for pressed key to continue or exit(if key=='e').
+    while key != ord("c"):
+        img = image.copy()
+        print(refPt)
+        print((len(refPt) // 2) %2 != 0)
+        if (curr_xy is not None) and (len(refPt) > 0):
+            if len(refPt[-1]) < 3:
+                print("HERE")
+                cv2.rectangle(img, (int(refPt[-1][0]), int(refPt[-1][1])), (int(curr_xy[-1][0]), int(curr_xy[-1][1])), (0, 0, 255), thickness=2)
+        if (len(refPt) > 0):
+            if len(refPt[0]) == 4:
+                if key == ord("r"):
+                    del refPt[-1]
+                for i in range(len(refPt) - 1):
+                    cv2.rectangle(img, (int(refPt[i][0]), int(refPt[i][1])), (int(refPt[i][2]), int(refPt[i][3])), (0, 0, 255), thickness=2)
+        cv2.imshow(window_name, img)
+        key = cv2.waitKey(20) & 0xFF
+        
+    cv2.destroyWindow(window_name)
+    boxes = []
+    img = image.copy()
+    for point in refPt:
+        cv2.rectangle(img, (point[0], point[1]), (point[2], point[3]), (0, 0, 255), 2)
+        boxes.append(convert_format(point, in_format=('x1', 'y1', 'x2', 'y2'), out_format=('x1', 'y1', 'w', 'h')))
+    cv2.imshow(window_name, img)
+    key = cv2.waitKey(0)
+    return boxes
+
 
 def preprocess(input_img, **kwargs):
     # Contrast Norm + Gauss Blur + Adaptive Threshold + Dilation + Canny
