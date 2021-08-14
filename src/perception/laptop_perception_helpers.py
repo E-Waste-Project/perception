@@ -57,6 +57,9 @@ class Rect:
 
     def add(self, rect):
         self.shift_by(rect.x, rect.y)
+    
+    def rect_to_list(self):
+        return [self.x , self.y, self.w, self.h]
 
     def __eq__(self, rect):
         if (
@@ -216,12 +219,20 @@ def box_near_by_dist(box1, boxes, dist_as_side_ratio=0.5):
     x2, y2 = x1 + w, y1 + h
     points = [(x1, y1), (x1, y2), (x2, y2), (x2, y1)]
     center_point = x1 + w // 2, y1 + h // 2
-    near = False
+    def points_near_box(points, box):
+        for point in points:
+            if point_near_box_by_dist(point, box, dist_as_side_ratio):
+                return True
+        return False
     for box in boxes:
-        near = point_near_box_by_dist(center_point, box, dist_as_side_ratio)
-        if near:
-            break
-    return near
+        bx1, by1, bw, bh = box[0], box[1], box[2], box[3]
+        bx2, by2 = bx1 + bw, by1 + bh 
+        box_points = [(bx1, by1), (bx1, by2), (bx2, by2), (bx2, by1)]
+        
+        if points_near_box(points, box) or points_near_box(box_points, box1):
+            return True
+        
+    return False
 
 
 def filter_boxes_from_image(boxes, image, window_name, create_new_window=True):
@@ -329,6 +340,38 @@ def find_contours(input_img, **kwargs):
     filtered_contours = filter_contours(all_contours, **kwargs)
     return filtered_contours
 
+def rotate_boxes(boxes, center, angle):
+    # depth_image = deepcopy(self.color_dist_image)
+    # (h, w) = depth_image.shape[:2]
+    # (cX, cY) = box_to_center(laptop_px)
+    # M = cv2.getRotationMatrix2D((cX, cY), self.laptop_angle, 1.0)
+    # inv_M = cv2.getRotationMatrix2D((cX, cY), -self.laptop_angle, 1.0)
+    # screw_pixels_arr = np.array(screw_pixels)
+    # conv_cover_box = convert_format(best_cover_box)
+    # best_cover_box_arr = np.array([[conv_cover_box[0], conv_cover_box[2]],
+    #                                [conv_cover_box[1], conv_cover_box[3]]])
+    # to_rotate = np.ones((3, screw_pixels_arr.shape[1]+2))
+    # to_rotate[:-1, :-2] = screw_pixels_arr
+    # to_rotate[:-1, -2:] = best_cover_box_arr
+    # print("screw_boxes = ", screw_pixels_arr)
+    # rotated_screws_boxes = np.round(np.dot(M, to_rotate)).astype(np.uint16)
+    # rotated_cover = rotated_screws_boxes[:, -2:]
+    # rotated_screws_boxes = rotated_screws_boxes[:, :-2]
+    # print("rotated_screw_boxes = ", rotated_screws_boxes)
+    # rotated = cv2.warpAffine(depth_image, M, (w, h))
+    # cv2.imshow("Rotated by {} Degrees".format(-self.laptop_angle), rotated)
+    
+    
+    # screw_boxes = rotated_screws_boxes.T.reshape((-1, 4), order="C").tolist()
+    # rotated_cover_box = rotated_cover.T.reshape((-1, 4), order="C").tolist()[0]
+    # rotated_cover_box = [rotated_cover_box[1], rotated_cover_box[0], rotated_cover_box[3], rotated_cover_box[2]]
+    # print("rotated_cover_box = ", rotated_cover_box)
+    # conv_rotated_cover_box = convert_format(
+    #         rotated_cover_box,
+    #         in_format=("x1", "y1", "x2", "y2"),
+    #         out_format=("x1", "y1", "w", "h"),
+    #     )
+    pass
 
 def detect_laptop(input_img, draw_on=None, **kwargs):
     # Takes gray_scale img, returns rect values of detected laptop.
@@ -382,7 +425,7 @@ def detect_laptop(input_img, draw_on=None, **kwargs):
         center = (int(rect[0][0]), int(rect[0][1]))
         width = int(rect[1][0])
         height = int(rect[1][1])
-        angle = int(rect[2])
+        angle = int(round(rect[2]))
 
         if width < height:
             angle = 90 - angle
@@ -414,6 +457,7 @@ def detect_laptop(input_img, draw_on=None, **kwargs):
             box_list[2][1],  # lower right corner y
             box_list[3][0],  # lower left corner x
             box_list[2][1],  # lower left corner y
+            angle
         ]
         if draw_on is not None:
             cv2.drawContours(draw_on, [box], 0, (0, 255, 0), thickness=5)
@@ -1063,9 +1107,7 @@ def plan_cover_cutting_path(
                 holes_coords, left, right, upper, lower, min_hole_dist
             )
             for hole_rect in holes_inside_cut_path_as_rects:
-                holes_inside_cut_path.append(
-                    [hole_rect.x, hole_rect.y, hole_rect.w, hole_rect.h]
-                )
+                holes_inside_cut_path.append(hole_rect.rect_to_list())
             cut_path = cut_rect.rect_to_path()
         elif method == 1:
             cut_path = custom_path_method(
@@ -1077,6 +1119,10 @@ def plan_cover_cutting_path(
                 min_hole_dist,
                 edges_to_include=edges_to_include,
             )
+            for hole in holes_coords:
+                if box_near_by_dist(laptop_coords.rect_to_list(), [hole.rect_to_list()]):
+                    holes_inside_cut_path.append(hole.rect_to_list())
+            
         elif method is None:
             cut_path = cut_rect.rect_to_path()
         else:
@@ -1088,8 +1134,9 @@ def plan_cover_cutting_path(
         if draw_on is not None:
             # Draw the final cutting path in red.
             # cut_rect.draw_on(draw_on, 'r')
+            laptop_coords.draw_on(draw_on, 'r')
             pass
-
+        
         # cropped_img = cut_rect.crop_img(original_img)
         # cropped_gray = cut_rect.crop_img(gray)
         # detect_holes(cropped_gray, draw_on=cropped_img)
@@ -1326,6 +1373,16 @@ def find_nearest_point_with_non_zero_depth(
     print("new_3d_pos = ", dist_mat[:, center[1], center[0]])
     return center
 
+def find_nearest_box_points_with_non_zero_depth(boxes, dist_mat, in_format=('x1', 'y1', 'x2', 'y2')):
+    new_boxes = deepcopy(boxes)
+    new_boxes = [convert_format(b, in_format=in_format) for b in new_boxes]
+    for b in new_boxes:
+        for i in range(2):
+            new_point = find_nearest_point_with_non_zero_depth(
+                dist_mat, b[i * 2 : i * 2 + 2]
+            )
+            new_boxes[-1][i * 2], new_boxes[-1][i * 2 + 1] = new_point[0], new_point[1]
+    return new_boxes
 
 def detect_laptop_pose(
     dist_mat, x_min=-2, x_max=2, y_min=-2, y_max=2, z_min=0, z_max=4, draw=False
@@ -1423,6 +1480,7 @@ class RealsenseHelpers:
         return_as="1d",
         reversed_pixels=False,
         filter_data=False,
+        transform_mat=None
     ):
 
         if len(px_data) < 1:
@@ -1439,7 +1497,8 @@ class RealsenseHelpers:
         px_data_arr = np.array(px_data).T.reshape((2, -1), order="F")
         (x_idx, y_idx) = (0, 1) if not reversed_pixels else (1, 0)
         xyz_arr = dist_mat[:, px_data_arr[y_idx], px_data_arr[x_idx]]
-
+        if transform_mat is not None:
+            xyz_arr = self.apply_cam_to_cam_transform(xyz_arr, transform_mat=transform_mat)
         if return_as == "1d":
             # 'F' means to read/write data from rows then when finished go to next column,
             # Check this https://docs.oracle.com/cd/E19957-01/805-4940/z400091044d0/index.html
@@ -1612,12 +1671,13 @@ class RealsenseHelpers:
         return px
 
     def cam_pixels_to_other_cam_pixels_unaligned(
-        self, from_px, dist_mat, to_cam_intrin, cam_to_cam_extrin
+        self, from_px, dist_mat, to_cam_intrin, cam_to_cam_extrin, filter_xyz=True
     ):
 
         # Give me a 2d/1d list of pixels
         points = self.px_to_xyz(from_px, dist_mat=dist_mat, return_as="2d")
-        points = filter_xyz_list(np.array(points).T)
+        if filter_xyz:
+            points = filter_xyz_list(np.array(points).T)
         points = np.array(points).reshape((3, -1), order="F")  # (3, npoints)
         wrong_points = np.where(np.logical_or(points[2] <= 0.26, points[2] >= 0.4))
         # print("wrong_points = ", wrong_points)
@@ -1625,7 +1685,8 @@ class RealsenseHelpers:
             points = self.apply_cam_to_cam_transform(
                 points, extrinsics=cam_to_cam_extrin
             )
-        points = filter_xyz_list(points.T.tolist())
+        if filter_xyz:
+            points = filter_xyz_list(points.T.tolist())
         points = np.array(points).reshape((3, -1), order="F")  # (3, npoints)
         wrong_points = np.where(np.logical_or(points[2] <= 0.26, points[2] >= 0.4))
         # print("points_y = ", points[1])
@@ -1897,7 +1958,7 @@ def correct_circles(img, circles_list):
         #         k = thresh*2 + 1
         #         print(param1, param2, thresh, dp, minR, maxR, minDist, k)
         #         cropped_img = cv2.GaussianBlur(cropped_img, (k,k), 0)
-        #         # cv2.imshow("cropped_image", cropped_img)
+        #         # cv2.imshow("cropped_image", cropped_img)laptop_coords
         #         # cv2.waitKey(0)
         #         # apply Otsu's automatic thresholding
         #         # (T, cropped_img) = cv2.threshold(cropped_img, thresh, 255, cv2.THRESH_BINARY)
