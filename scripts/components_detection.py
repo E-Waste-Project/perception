@@ -350,8 +350,6 @@ class Model:
 
         # Generate the keyboard cut path
         keyboard = self.get_class_detections(detections, "keyboard", best_only=True)
-        print("cover_color_x = ", cover_cut_path_color[0][0])
-        print("cover_color_y = ", cover_cut_path_color[0][1])
         keyboard_cut_path = []
         if len(keyboard) > 0:
             keyboard_cover_dist_x = keyboard[0] - cover_cut_path_color[0][0]
