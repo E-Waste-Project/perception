@@ -1220,7 +1220,10 @@ class Model:
                 # draw_boxes(self.color_dist_image, [conv_rotated_cover_box], (255, 0, 0), in_format=("x1", "y1", "w", "h"))
 
         if len(best_cover_box) < 1:
-            return [], screw_boxes, box_cname
+            if generate_on_depth_image:
+                return [], screw_boxes, box_cname, []
+            else:
+                return [], screw_boxes, box_cname
 
         if not generate_on_depth_image:
             # Transfrom Laptop Box from Depth Image to Color Image
