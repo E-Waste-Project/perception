@@ -171,6 +171,8 @@ def draw_boxes(
     in_format=("x1", "y1", "w", "h"),
 ):
     for box in boxes:
+        if len(box) < 1:
+            return
         conv_box = convert_format(box, in_format=in_format)
         cv2.rectangle(
             image, tuple(conv_box[0:2]), tuple(conv_box[2:4]), color, thickness
