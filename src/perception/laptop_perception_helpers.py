@@ -125,8 +125,13 @@ def euclidean_dist(point1, point2):
 def euclidean_dist_array(points, point):
     x_diff = points[:, 0] - point[0]
     y_diff = points[:, 1] - point[1]
-    return np.sqrt(x_diff ** 2 + y_diff ** 2)
+    return np.sqrt(x_diff**2 + y_diff**2)
 
+def euclidean_dist_nd(points, point):
+    point = np.array(point).reshape((-1, 1))
+    diff_arr = points - point
+    sum_of_squares_arr = np.sum(diff_arr**2, axis=1)
+    return np.sqrt(sum_of_squares_arr)
 
 def scale_contour(cnt, scale):
     M = cv2.moments(cnt)
@@ -510,7 +515,7 @@ def detect_picking_point(
         "reverse": False,
         "sorting_key": enclosing_rect_area,
     }
-
+    picking_indices = None
     for key, val in kwargs.items():
         if key in all_kwargs.keys():
             all_kwargs[key] = val
@@ -573,19 +578,29 @@ def detect_picking_point(
 
         print(indices)
         xyz = dist_mat[:, mother_pixels[0], mother_pixels[1]].reshape(-1, 3)
+        mother_pixels_arr = np.array(mother_pixels)
         print("xyz shape = ", xyz.shape)
         print("num of indices = ", len(indices))
         for i in range(xyz.shape[0]):
             x, y, z = xyz[i, 0], xyz[i, 1], xyz[i, 2]
             x_cond = np.isclose(x - 0.036, xyz[:, 0], rtol=0, atol=5e-3)
             y_cond = np.isclose(y, xyz[:, 1], rtol=0, atol=5e-3)
-            z_cond = np.isclose(z, xyz[:, 2], rtol=0, atol=2e-3)
+            z_cond = np.isclose(z, xyz[:, 2], rtol=0, atol=3e-3)
+            # dist_arr = euclidean_dist_nd(np.array([x - 0.036, y, z]), xyz).reshape((-1,))
+            # sorted_dist_arr_indices = np.argsort(dist_arr)
             indices = np.where(np.logical_and(x_cond, np.logical_and(y_cond, z_cond)))
             if indices[0].shape[0] >= 1:
+                picking_indices = indices
+                dist_arr = euclidean_dist_nd(mother_pixels_arr[:, indices], mother_pixels_arr[:, i]).reshape((-1,))
+                sorted_dist_arr_indices = np.argsort(dist_arr)
                 print(indices)
-                idx = indices[0][-1]
+                idx = sorted_dist_arr_indices[0]
                 print("picking_point = ", xyz[i, :])
-                print("other_finger_picking_points = ", xyz[indices[0], :])
+                print("other_finger_picking_points = ", xyz[idx, :])
+            # if dist_arr.shape[0] > 0:
+                print("picking_point = ", xyz[i, :])
+                # idx = sorted_dist_arr_indices[0]
+                print("other_finger_picking_points = ", xyz[sorted_dist_arr_indices, :])
                 picking_point_idx = i
                 other_finger_picking_point_idx = idx
                 other_finger_picking_point = (
@@ -600,6 +615,9 @@ def detect_picking_point(
                         color=(255, 0, 0),
                         thickness=-1,
                     )
+                    for i in range(len(picking_indices[0])):
+                        cv2.circle(draw_on, (mother_pixels[1][picking_indices[0][i]], mother_pixels[0][picking_indices[0][i]]), 10+i*2, color=(255, 0, 0), thickness=2)
+
                 break
             else:
                 print("No similar point for picking_point = ", xyz[i, :])
@@ -613,6 +631,8 @@ def detect_picking_point(
     if draw_on is not None:
         cv2.circle(draw_on, picking_point, 10, color=(0, 0, 255), thickness=-1)
         cv2.circle(draw_on, (point[1], point[0]), 10, color=(0, 255, 0), thickness=2)
+        for i in range(len(picking_indices[0])):
+            cv2.circle(draw_on, (mother_pixels[1][picking_indices[0][i]], mother_pixels[0][picking_indices[0][i]]), 10, color=(0, 255, 0), thickness=2)
     return picking_point
 
 
@@ -1383,7 +1403,7 @@ def find_nearest_box_points_with_non_zero_depth(boxes, dist_mat, in_format=('x1'
             new_point = find_nearest_point_with_non_zero_depth(
                 dist_mat, b[i * 2 : i * 2 + 2]
             )
-            new_boxes[-1][i * 2], new_boxes[-1][i * 2 + 1] = new_point[0], new_point[1]
+            b[i * 2], b[i * 2 + 1] = new_point[0], new_point[1]
     return new_boxes
 
 def detect_laptop_pose(
