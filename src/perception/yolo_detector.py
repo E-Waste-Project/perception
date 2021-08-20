@@ -38,7 +38,7 @@ class Yolo:
 
         print(f'Done. ({time.time() - t0:.3f}s)')
 
-    def detect(self, input_img, augment=False, draw=False):
+    def detect(self, input_img, augment=False, draw=False, line_thickness=2):
         # Preprocess img
         # Padded resize
         img = letterbox(input_img, new_shape=self.imgsz)[0]
@@ -95,7 +95,7 @@ class Yolo:
                     detection_classes.append(cls)
                     label = f'{names[int(cls)]} {conf:.2f}'
                     if draw:
-                        plot_one_box(xyxy, im0, label=label, color=colors[int(cls)], line_thickness=3)
+                        plot_one_box(xyxy, im0, label=label, color=colors[int(cls)], line_thickness=line_thickness)
                 detections['detection_boxes'] = np.array(detection_boxes)
                 detections['detection_scores'] = np.array(detection_scores)
                 detections['detection_classes'] = np.array(detection_classes)

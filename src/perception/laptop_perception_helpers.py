@@ -296,6 +296,8 @@ def draw_boxes_on_image(image, window_name, create_new_window=True):
         # global down_pressed
         # global curr_xy
         # global refPt
+        y = min(y, 719)
+        x = min(x, 1279)
         curr_xy.clear()
         curr_xy.append([x, y])
         img = image.copy()
@@ -320,8 +322,8 @@ def draw_boxes_on_image(image, window_name, create_new_window=True):
     # Show image and wait for pressed key to continue or exit(if key=='e').
     while key != ord("c"):
         img = image.copy()
-        print(refPt)
-        print((len(refPt) // 2) %2 != 0)
+        # print(refPt)
+        # print((len(refPt) // 2) %2 != 0)
         if (curr_xy is not None) and (len(refPt) > 0):
             if len(refPt[-1]) < 3:
                 print("HERE")
@@ -330,8 +332,9 @@ def draw_boxes_on_image(image, window_name, create_new_window=True):
             if len(refPt[0]) == 4:
                 if key == ord("r"):
                     del refPt[-1]
-                for i in range(len(refPt) - 1):
-                    cv2.rectangle(img, (int(refPt[i][0]), int(refPt[i][1])), (int(refPt[i][2]), int(refPt[i][3])), (0, 0, 255), thickness=2)
+                for i in range(len(refPt)):
+                    if len(refPt[i]) == 4:
+                        cv2.rectangle(img, (int(refPt[i][0]), int(refPt[i][1])), (int(refPt[i][2]), int(refPt[i][3])), (0, 0, 255), thickness=2)
         cv2.imshow(window_name, img)
         key = cv2.waitKey(20) & 0xFF
         
@@ -622,7 +625,9 @@ def detect_picking_point(
         print("depth_after", points_depth.shape)
         print("dist_after", points_dist.shape)
         if method == 1:
-            first_n_percent = int(0.5 * points_depth.shape[0])
+            sz = points_depth.shape[0]
+            first_n_percent = int(0.2 * sz)
+            mid = int(sz // 2)
             indices = np.argsort(np.abs(points_depth))[: max(first_n_percent, 1)]
             points_dist = points_dist[indices]
             points_depth = points_depth[indices]
@@ -651,24 +656,26 @@ def detect_picking_point(
         print("num of indices = ", len(indices))
         for i in range(xyz.shape[0]):
             x, y, z = xyz[i, 0], xyz[i, 1], xyz[i, 2]
-            x_cond = np.isclose(x - 0.036, xyz[:, 0], rtol=0, atol=5e-3)
-            y_cond = np.isclose(y, xyz[:, 1], rtol=0, atol=5e-3)
-            z_cond = np.isclose(z, xyz[:, 2], rtol=0, atol=3e-3)
-            # dist_arr = euclidean_dist_nd(np.array([x - 0.036, y, z]), xyz).reshape((-1,))
-            # sorted_dist_arr_indices = np.argsort(dist_arr)
-            indices = np.where(np.logical_and(x_cond, np.logical_and(y_cond, z_cond)))
-            if indices[0].shape[0] >= 1:
-                picking_indices = indices
-                dist_arr = euclidean_dist_nd(mother_pixels_arr[:, indices], mother_pixels_arr[:, i]).reshape((-1,))
-                sorted_dist_arr_indices = np.argsort(dist_arr)
-                print(indices)
-                idx = sorted_dist_arr_indices[0]
+            x_cond = np.isclose(x - 0.036, xyz[:, 0].reshape((-1, )), rtol=0, atol=0.003)
+            y_cond = np.isclose(y, xyz[:, 1].reshape((-1, )), rtol=0, atol=0.003)
+            z_cond = np.isclose(z, xyz[:, 2].reshape((-1, )), rtol=0, atol=0.002)
+            print('x, y, z = ', x, y, z)
+            # dist_arr = euclidean_dist_nd(xyz.T, np.array([x - 0.036, y, z])).reshape((-1,))
+            # cond_indices = np.argsort(dist_arr)
+            cond_indices = np.argwhere(np.logical_and(x_cond, np.logical_and(y_cond, z_cond)))
+            # print("cond_indices = ", cond_indices)
+            if cond_indices.shape[0] < 1:
+                continue
+            x_pix_cond = abs(mother_pixels_arr[1, cond_indices[0]] - mother_pixels_arr[1, i]).reshape(-1,) >= 20
+            y_pix_cond = abs(mother_pixels_arr[0, cond_indices[0]] - mother_pixels_arr[0, i]).reshape(-1,) < 3
+            indices = np.argwhere(np.logical_and(x_pix_cond, y_pix_cond))
+            print("indices = ", indices)
+            if indices.shape[0] >= 1:
+                picking_indices = cond_indices[0][indices[0]]
+                idx = picking_indices[0]
                 print("picking_point = ", xyz[i, :])
                 print("other_finger_picking_points = ", xyz[idx, :])
-            # if dist_arr.shape[0] > 0:
-                print("picking_point = ", xyz[i, :])
-                # idx = sorted_dist_arr_indices[0]
-                print("other_finger_picking_points = ", xyz[sorted_dist_arr_indices, :])
+                print("candidate_points = ", xyz[picking_indices, :])
                 picking_point_idx = i
                 other_finger_picking_point_idx = idx
                 other_finger_picking_point = (
@@ -683,8 +690,8 @@ def detect_picking_point(
                         color=(255, 0, 0),
                         thickness=-1,
                     )
-                    for i in range(len(picking_indices[0])):
-                        cv2.circle(draw_on, (mother_pixels[1][picking_indices[0][i]], mother_pixels[0][picking_indices[0][i]]), 10+i*2, color=(255, 0, 0), thickness=2)
+                    for i in range(picking_indices.shape[0]):
+                        cv2.circle(draw_on, (mother_pixels[1][picking_indices[i]], mother_pixels[0][picking_indices[i]]), 10, color=(255, 0, 0), thickness=2)
 
                 break
             else:
@@ -699,8 +706,7 @@ def detect_picking_point(
     if draw_on is not None:
         cv2.circle(draw_on, picking_point, 10, color=(0, 0, 255), thickness=-1)
         cv2.circle(draw_on, (point[1], point[0]), 10, color=(0, 255, 0), thickness=2)
-        for i in range(len(picking_indices[0])):
-            cv2.circle(draw_on, (mother_pixels[1][picking_indices[0][i]], mother_pixels[0][picking_indices[0][i]]), 10, color=(0, 255, 0), thickness=2)
+        
     return picking_point
 
 
@@ -1303,6 +1309,13 @@ def plan_port_cutting_path(
     ports_near_upper_edge = list(
         filter(lambda coord: (coord.y - ned <= upper <= coord.y2 + ned), ports_coords)
     )
+    ports_not_near_edge = list(
+        filter(lambda coord: (coord not in ports_near_left_edge) and \
+            (coord not in ports_near_lower_edge) and \
+            (coord not in ports_near_right_edge) and \
+            (coord not in ports_near_upper_edge), ports_coords)
+    )
+
 
     # Sort ports to be in the direction of motion of each edge.
     ports_near_left_edge = sorted(
@@ -1378,7 +1391,7 @@ def plan_port_cutting_path(
         y = group[0].y - cutting_dist
         x2 = max(group, key=lambda port: port.x2).x2 + cutting_dist
         y2 = group[-1].y2 + cutting_dist
-        cut_paths.append([(x, y), (x2, y), (x2, y2), (x, y2)])
+        cut_paths.append([(x, y), (x2, y), (x2, y2), (x, y2), (x, y)])
 
     for group in port_groups_near_lower_edge:
         if len(group) < 1:
@@ -1387,7 +1400,7 @@ def plan_port_cutting_path(
         y = min(group, key=lambda port: port.y).y - cutting_dist
         x2 = group[-1].x2 + cutting_dist
         y2 = max(group, key=lambda port: port.y2).y2
-        cut_paths.append([(x, y2), (x, y), (x2, y), (x2, y2)])
+        cut_paths.append([(x, y2), (x, y), (x2, y), (x2, y2), (x, y2)])
 
     for group in port_groups_near_right_edge:
         if len(group) < 1:
@@ -1396,7 +1409,7 @@ def plan_port_cutting_path(
         y = group[-1].y - cutting_dist
         x2 = max(group, key=lambda port: port.x2).x2
         y2 = group[0].y2 + cutting_dist
-        cut_paths.append([(x2, y2), (x, y2), (x, y), (x2, y)])
+        cut_paths.append([(x2, y2), (x, y2), (x, y), (x2, y), (x2, y2)])
 
     for group in port_groups_near_upper_edge:
         if len(group) < 1:
@@ -1405,7 +1418,10 @@ def plan_port_cutting_path(
         y = min(group, key=lambda port: port.y).y
         x2 = group[0].x2 + cutting_dist
         y2 = max(group, key=lambda port: port.y2).y2 + cutting_dist
-        cut_paths.append([(x2, y), (x2, y2), (x, y2), (x, y)])
+        cut_paths.append([(x2, y), (x2, y2), (x, y2), (x, y), (x2, y)])
+    
+    for port in ports_not_near_edge:
+        cut_paths.append(port.rect_to_path())
 
     return cut_paths
 
