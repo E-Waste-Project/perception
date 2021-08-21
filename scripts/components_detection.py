@@ -1289,8 +1289,6 @@ class Model:
             else:
                 return [], screw_boxes, box_cname
 
-        original_color_screw_boxes = deepcopy(screw_boxes)
-
         if generate_on_depth_image:
 
             screw_boxes = find_nearest_box_points_with_non_zero_depth(
@@ -1332,17 +1330,7 @@ class Model:
                 # draw_boxes(self.color_dist_image, [conv_rotated_cover_box], (255, 0, 0), in_format=("x1", "y1", "w", "h"))
 
         if not generate_on_depth_image:
-            # # Transfrom Laptop Box from Depth Image to Color Image
-            # best_cover_box_arr = np.array(best_cover_box).reshape((2, 2))
-            # cover_box_pixels = self.cam_helpers.cam_pixels_to_other_cam_pixels_unaligned(
-            #         best_cover_box_arr,
-            #         self.dist_mat,
-            #         self.color_intrin,
-            #         self.depth_to_color_extrin,
-            #     )
-            # cover_box_pixels = (
-            #     np.array(cover_box_pixels).T.reshape((-1, 4), order="C").tolist()[0]
-            # )
+            # Use Transfromed Laptop Box from Depth Image to Color Image
             best_cover_box = convert_format(
                 self.laptop_box_px_color,
                 in_format=("x1", "y1", "x2", "y2"),
