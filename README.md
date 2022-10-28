@@ -26,3 +26,12 @@ To run any of the scripts, simply rosrun it.
 ```
 $ rosrun perception script_name.py
 ```
+
+If useful to you, please cite our paper:
+
+```bibtex
+@INPROCEEDINGS{9447637,  author={Bassiouny, Abdelrhman M. and Farhan, Abdelrahman S. and Maged, Shady A. and Awaad, Mohammed I.},
+booktitle={2021 International Mobile, Intelligent, and Ubiquitous Computing Conference (MIUCC)},
+title={Comparison of Different Computer Vision Approaches for E-waste Components Detection to Automate E-waste Disassembly},
+year={2021}, pages={17-23},  doi={10.1109/MIUCC52538.2021.9447637}}
+```
