@@ -26,6 +26,13 @@ To run any of the scripts, simply rosrun it.
 ```
 $ rosrun perception script_name.py
 ```
+Used for Robothon Grand challenge (Our Team RAND-E ranked 3rd World Wide):
+
+[Demonstration Video](https://www.youtube.com/watch?v=4QgSiGciNaM&t)
+
+Also Used for Autonomous Semi-Destructive Disassembly of Laptops:
+
+[Demonstration Video](https://youtu.be/DrsZcyIvMZc)
 
 If useful to you, please cite our paper:
 
