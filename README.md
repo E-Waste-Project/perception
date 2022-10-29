@@ -1,5 +1,8 @@
 # Disassembly-Perception
 Perception tasks needed for robots to disassemble laptops.
+It has Deep learning models based on Yolov5 and ssd trained on ![laptop components dataset](https://drive.google.com/drive/folders/1MSZEYLth2RzEBamaif_onqErxO3oXc81) that we collected.
+
+Also It has image processing pipelines for planning cutting operations to detach components.
 
 ## Dependencies
 ```
