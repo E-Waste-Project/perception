@@ -4,6 +4,12 @@ It has Deep learning models based on Yolov5 and ssd trained on [laptop component
 
 Also It has image processing pipelines for planning cutting operations to detach components.
 
+## Sample Results
+![1](https://user-images.githubusercontent.com/36744004/198827769-0698e458-4faf-4493-b31a-4863189c5e25.jpg)
+![11](https://user-images.githubusercontent.com/36744004/198827778-a8c3e502-47d9-47aa-9c96-4cc758a7b204.jpg)
+![1_Color](https://user-images.githubusercontent.com/36744004/198827816-20911b40-4cf2-4ef1-930f-ddec82abbaff.png)
+
+
 ## Dependencies
 ```
 Python >= 3
