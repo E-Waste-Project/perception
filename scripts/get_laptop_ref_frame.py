@@ -7,7 +7,7 @@ from copy import deepcopy
 import ros_numpy
 from std_msgs.msg import String, Float32MultiArray
 from realsense2_camera.msg import Extrinsics
-from perception.laptop_perception_helpers import RealsenseHelpers, detect_laptop_pose
+from perception.laptop_perception_helpers import RealsenseHelpers, detect_laptop_pose, constrain_environment
     
     
 
@@ -27,7 +27,7 @@ class LaptopPoseDetector:
                 self.limits[key] += 2
         self.cam_helpers = RealsenseHelpers()
         
-    def _tune_pose_detector(self):
+    def _tune_pose_detector(self, detect_laptop=True):
 
         win_name = 'constrained environment'
         cv2.namedWindow(win_name)
@@ -50,20 +50,29 @@ class LaptopPoseDetector:
             
             # Get current distances of all pixels from the depth image.
             dist_mat = self.cam_helpers.get_dist_mat_from_cam(transform_to_color=True)
+            print(dist_mat.shape)
             # Detect the laptop pose data (laptop_center, flipping_point, upper_point) as pixels
-            laptop_data_px , dist_image = detect_laptop_pose(dist_mat, draw=True,
-                                                                x_min=self.limits['x_min'], x_max=self.limits['x_max'],
-                                                                y_min=self.limits['y_min'], y_max=self.limits['y_max'],
-                                                                z_min=self.limits['z_min'], z_max=self.limits['z_max'])
-            if laptop_data_px is not None:
-                # Deproject the pixels representing laptop pose data to xyz 3d pose data. 
-                laptop_pose_data = self.cam_helpers.px_to_xyz(laptop_data_px, dist_mat=dist_mat)
-                print(dist_image.shape)
-                img_msg = ros_numpy.msgify(Image, dist_image, encoding='bgr8')
-                # img_msg = ros_numpy.msgify(Image, dist_image, encoding='mono8')
-                
-                self.img_publisher.publish(img_msg)
-                # laptop_data_msg = rospy.wait_for_message("/laptop_data", Float32MultiArray) # center, flip_point
+            if detect_laptop:
+                laptop_data_px , dist_image = detect_laptop_pose(dist_mat, draw=True,
+                                                                    x_min=self.limits['x_min'], x_max=self.limits['x_max'],
+                                                                    y_min=self.limits['y_min'], y_max=self.limits['y_max'],
+                                                                    z_min=self.limits['z_min'], z_max=self.limits['z_max'])
+                if laptop_data_px is not None:
+                    # Deproject the pixels representing laptop pose data to xyz 3d pose data. 
+                    laptop_pose_data = self.cam_helpers.px_to_xyz(laptop_data_px, dist_mat=dist_mat)
+                    print(dist_image.shape)
+                    img_msg = ros_numpy.msgify(Image, dist_image, encoding='bgr8')
+                    # img_msg = ros_numpy.msgify(Image, dist_image, encoding='mono8')
+                    
+                    self.img_publisher.publish(img_msg)
+                    # laptop_data_msg = rospy.wait_for_message("/laptop_data", Float32MultiArray) # center, flip_point
+            else:
+                dist_image = constrain_environment(
+                    deepcopy(dist_mat),
+                    x_lim=(self.limits['x_min'], self.limits['x_max']),
+                    y_lim=(self.limits['y_min'], self.limits['z_max']),
+                    z_lim=(self.limits['z_min'], self.limits['z_max']),
+                )
             
             # show converted depth image
             cv2.imshow(win_name, dist_image)
@@ -75,5 +84,5 @@ class LaptopPoseDetector:
 if __name__ == "__main__":
     rospy.init_node("frame_detector")
     laptop_pose_detector = LaptopPoseDetector()
-    laptop_pose_detector._tune_pose_detector()
+    laptop_pose_detector._tune_pose_detector(detect_laptop=False)
     rospy.spin()

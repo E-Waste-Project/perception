@@ -1730,19 +1730,28 @@ class RealsenseHelpers:
         dist_mat[2] = depth_img
         return dist_mat
 
-    def calculate_pixels_from_points(self, dist_mat, intrinsics):
+    def calculate_pixels_from_points(self, dist_mat, intrinsics, cam_to_cam_extrinsics=None, filter_xyz=False):
+        points = dist_mat
+        if cam_to_cam_extrinsics is not None:
+            points = self.apply_cam_to_cam_transform(
+                points, extrinsics=cam_to_cam_extrinsics
+            )
+            if filter_xyz:
+                points = filter_xyz_list(points.T.tolist())
+            points = np.array(points).reshape((3, -1), order="F")  # (3, npoints)
+            # wrong_points = np.where(np.logical_or(points[2] <= 0.26, points[2] >= 0.4))
         intr = self.get_intrinsics_as_dict_from_intrinsics_camera_info(intrinsics)
-        pixel_mat = np.zeros((2, dist_mat.shape[1]))
-        pixel_mat[0] = ((dist_mat[0] / dist_mat[2]) * intr["fx"]) + intr["px"]
-        pixel_mat[1] = ((dist_mat[1] / dist_mat[2]) * intr["fy"]) + intr["py"]
+        pixel_mat = np.zeros((2, points.shape[1]))
+        pixel_mat[0] = ((points[0] / points[2]) * intr["fx"]) + intr["px"]
+        pixel_mat[1] = ((points[1] / points[2]) * intr["fy"]) + intr["py"]
         wrong_indices = np.argwhere(pixel_mat[0] < 0)
         pixel_mat[0, wrong_indices] = 0
         wrong_indices = np.argwhere(pixel_mat[1] < 0)
         pixel_mat[1, wrong_indices] = 0
-        print("px", intr["px"])
-        print("py", intr["py"])
-        print("fx", intr["fx"])
-        print("fy", intr["fy"])
+        # print("px", intr["px"])
+        # print("py", intr["py"])
+        # print("fx", intr["fx"])
+        # print("fy", intr["fy"])
         return pixel_mat.astype(np.uint16)
 
     def get_depth_img_from_cam(self, depth_topic="/camera/depth/image_rect_raw"):
@@ -1807,6 +1816,7 @@ class RealsenseHelpers:
         )
 
         return pixels
+    
 
     def color_pixels_to_depth_pixels_and_back(
         self,
