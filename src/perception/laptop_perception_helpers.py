@@ -1547,6 +1547,7 @@ class RealsenseHelpers:
         self.depth_intrin_topic = "/camera/depth/camera_info"
         self.depth_to_color_extrin_topic = "/camera/extrinsics/depth_to_color"
         self.raw_depth_topic = "/camera/depth/image_rect_raw"
+        self.color_image_topic = "/camera/color/image_raw"
         self.aligned_depth_topic = "/camera/aligned_depth_to_color/image_raw"
         if raw_depth:
             self.depth_topic = self.raw_depth_topic
