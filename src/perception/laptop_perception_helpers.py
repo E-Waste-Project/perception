@@ -11,6 +11,9 @@ from sensor_msgs.msg import CameraInfo, Image
 from geometry_msgs.msg import PoseArray, Pose
 import ros_numpy
 import rospy
+from robot_helpers.srv import TransformPoses, LookupTransform
+from tf.transformations import quaternion_matrix
+from std_msgs.msg import Float32MultiArray, String
 
 
 class Rect:
@@ -1425,15 +1428,79 @@ def plan_port_cutting_path(
 
     return cut_paths
 
+def transform_dist_mat_slow(dist_mat, src_frame, target_frame):
+    xyz_list = dist_mat.reshape((3, -1)).T.reshape((-1,)).tolist()
+    points_as_pose_array = xyz_list_to_pose_array(xyz_list)
+    # Transform points to be wrt robot base frame
+    transformation_data = {
+        "ref_frame": String(src_frame),
+        "target_frame": String(target_frame),
+        "poses_to_transform": points_as_pose_array,
+    }
+    response = service_req("/transform_poses", TransformPoses, inputs=transformation_data)
+    transformed_points = response.transformed_poses
+    # filtered_pose_array = PoseArray()
+    x, y, z = [], [], []
+    for point in transformed_points.poses:
+        # if point.position.x < x_lim[0] or point.position.x > x_lim[1]:
+        #     continue
+        # if point.position.y < y_lim[0] or point.position.y > y_lim[1]:
+        #     continue
+        # if point.position.z < z_lim[0] or point.position.z > z_lim[1]:
+        #     continue
+        x.append(point.position.x)
+        y.append(point.position.y)
+        z.append(point.position.z)
+    #     filtered_pose_array.poses.append(point)
+    # # Transform points back to camera frame
+    # transformation_data = {
+    #     "ref_frame": String(target_frame),
+    #     "target_frame": String(src_frame),
+    #     "poses_to_transform": filtered_pose_array,
+    # }
+    # response = service_req("/transform_poses", TransformPoses, inputs=transformation_data)
+    # transformed_points = response.transformed_poses
+    # x, y, z = [], [], []
+    # for point in transformed_points:
+    #     x.append(point.position.x)
+    #     y.append(point.position.y)
+    #     z.append(point.position.z)
+    x, y, z = np.array(x), np.array(y), np.array(z)
+    x = x.reshape(dist_mat[0].shape)
+    y = y.reshape(dist_mat[1].shape)
+    z = z.reshape(dist_mat[2].shape)
+    new_dist_mat = np.array([x, y, z])
+    return new_dist_mat
 
-def constrain_environment(dist_mat, x_lim, y_lim, z_lim):
+def transform_dist_mat(dist_mat, src_frame, target_frame):
+    transformation_data = {
+    "target_frame": String(target_frame),
+    "source_frame": String(src_frame)
+    }
+    response = service_req("/lookup_transform", LookupTransform, inputs=transformation_data)
+    frame = response.frame_pose
+    quat = [frame.orientation.x, frame.orientation.y, frame.orientation.z, frame.orientation.w]
+    r = quaternion_matrix(quat)[:3, :3]
+    t = np.array([frame.position.x, frame.position.y, frame.position.z])
+    transform = get_transform_from_r_t(r, t)
+    new_dist_mat = apply_transform(dist_mat, transform)
+    return new_dist_mat
+
+def constrain_environment(dist_mat, x_lim, y_lim, z_lim, src_frame=None, target_frame=None, transform_points=False):
+    if transform_points:
+        if src_frame is not None and target_frame is not None:
+            # Transform points to be wrt robot base frame
+            new_dist_mat = transform_dist_mat(dist_mat, src_frame, target_frame)
+        else:
+            raise ValueError("Must specify source and target frames to transform points")
+
     # convert depth to a uint8 image with pixel values (0 -> 255)
-    dist_image = deepcopy(dist_mat[2]) * 255 / np.max(dist_mat[2])
+    dist_image = deepcopy(new_dist_mat[2]) * 255 / np.max(new_dist_mat[2])
     dist_image = dist_image.astype(np.uint8)
     _, dist_image = cv2.threshold(dist_image, 0, 255, cv2.THRESH_BINARY)
 
-    x, y, z = dist_mat[0], dist_mat[1], dist_mat[2]
-
+    x, y, z = new_dist_mat[0], new_dist_mat[1], new_dist_mat[2]
+    
     x_thresh = cv2.inRange(x, *x_lim)
     _, x_thresh = cv2.threshold(x_thresh, 0, 1, cv2.THRESH_BINARY)
 
@@ -1540,6 +1607,30 @@ def xyz_list_to_pose_array(xyz_list):
         pose_array.poses.append(pose)
     return pose_array
 
+def service_req(name, service_type, **inputs):
+    _ = rospy.wait_for_service(name)
+    try:
+        callable_service_func = rospy.ServiceProxy(name, service_type)
+        response = callable_service_func(**inputs["inputs"])
+        return response
+    except rospy.ServiceException as e:
+        print("Service Failed : {}".format(e))
+
+def get_transform_from_r_t(r, t, flattened=True):
+    # r is a flattened 3x3 rotation matrix in column major order.
+    transform_mat = np.zeros((3, 4))
+    transform_mat[:, -1] = t
+    if flattened:
+        transform_mat[:, :-1] = r.reshape((3, 3), order="F")
+    else:
+        transform_mat[:, :-1] = r
+    return transform_mat
+
+def apply_transform(dist_mat, transform_mat):
+    modified_dist_mat = np.ones((4, np.prod(dist_mat.shape[1:], axis=0)))
+    modified_dist_mat[:-1, :] = dist_mat.reshape((3, -1))
+    return np.dot(transform_mat, modified_dist_mat).reshape(dist_mat.shape)
+
 
 class RealsenseHelpers:
     def __init__(self, raw_depth=True):
@@ -1631,10 +1722,7 @@ class RealsenseHelpers:
     def get_transform_from_extrinsics(self, extrinsics):
         r = np.array(extrinsics.rotation)
         t = np.array(extrinsics.translation)
-        transform_mat = np.zeros((3, 4))
-        transform_mat[:, -1] = t
-        transform_mat[:, :-1] = r.reshape((3, 3), order="F")
-        return transform_mat
+        return get_transform_from_r_t(r, t)
 
     def get_inverse_transform(self, transform_mat_3x4):
         transform_mat = np.zeros((4, 4))
@@ -1693,9 +1781,7 @@ class RealsenseHelpers:
             transform_mat = self.get_transform_from_extrinsics(extrinsics)
         if invert_transform:
             transform_mat = self.get_inverse_transform(transform_mat)
-        modified_dist_mat = np.ones((4, np.prod(dist_mat.shape[1:], axis=0)))
-        modified_dist_mat[:-1, :] = dist_mat.reshape((3, -1))
-        return np.dot(transform_mat, modified_dist_mat).reshape(dist_mat.shape)
+        return apply_transform(dist_mat, transform_mat)
 
     def get_intrinsics(self, intrinsics_topic):
         return rospy.wait_for_message(intrinsics_topic, CameraInfo)
