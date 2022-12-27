@@ -20,7 +20,7 @@ class LaptopPoseDetector:
         self.trackbar_limits = {'x_min': 1802, 'x_max': 4000,
                                 'y_min': 1763   , 'y_max': 3674,
                                 'z_min': 0, 'z_max': 2258}
-        limits = {'x_min': 0.46799999999999997, 'x_max': 1.157, 'y_min': -0.07800000000000007, 'y_max': 2.0, 'z_min': -0.7050000000000001, 'z_max': 0.6760000000000002}
+        limits = {'x_min': -0.6359999999999999, 'x_max': 0.2829999999999999, 'y_min': -2.0, 'y_max': 0.383, 'z_min': 0.41999999999999993, 'z_max': 1.0190000000000001}
         for key, val in limits.items():
             self.trackbar_limits[key] = int(1000 * (val + 2))
         self.limits = {}
@@ -74,7 +74,7 @@ class LaptopPoseDetector:
                 dist_image = constrain_environment(
                     deepcopy(dist_mat),
                     x_lim=(self.limits['x_min'], self.limits['x_max']),
-                    y_lim=(self.limits['y_min'], self.limits['z_max']),
+                    y_lim=(self.limits['y_min'], self.limits['y_max']),
                     z_lim=(self.limits['z_min'], self.limits['z_max']),
                     target_frame='aruco_base',
                     src_frame='camera_color_optical_frame',
