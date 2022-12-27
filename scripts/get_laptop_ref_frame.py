@@ -20,7 +20,7 @@ class LaptopPoseDetector:
         self.trackbar_limits = {'x_min': 1802, 'x_max': 4000,
                                 'y_min': 1763   , 'y_max': 3674,
                                 'z_min': 0, 'z_max': 2258}
-        limits = {'x_min': 0.46799999999999997, 'x_max': 1.157, 'y_min': -0.08899999999999997, 'y_max': 2.0, 'z_min': -0.7050000000000001, 'z_max': 0.6760000000000002}
+        limits = {'x_min': 0.46799999999999997, 'x_max': 1.157, 'y_min': -0.07800000000000007, 'y_max': 2.0, 'z_min': -0.7050000000000001, 'z_max': 0.6760000000000002}
         for key, val in limits.items():
             self.trackbar_limits[key] = int(1000 * (val + 2))
         self.limits = {}
@@ -46,10 +46,10 @@ class LaptopPoseDetector:
                 #     self.limits[key] += 2
             print(self.limits)
                     
-            # color_img_msg = rospy.wait_for_message(
-            #         "/camera/color/image_raw", Image)
-            # color_img = ros_numpy.numpify(color_img_msg)
-            # color_img = cv2.cvtColor(color_img, cv2.COLOR_BGR2RGB)
+            color_img_msg = rospy.wait_for_message(
+                    "/camera/color/image_raw", Image)
+            color_img = ros_numpy.numpify(color_img_msg)
+            color_img = cv2.cvtColor(color_img, cv2.COLOR_RGB2BGR)
             # print("received Image")
             
             # Get current distances of all pixels from the depth image.
@@ -80,9 +80,26 @@ class LaptopPoseDetector:
                     src_frame='camera_color_optical_frame',
                     transform_points=True
                 )
-            
+            color_intr = self.cam_helpers.get_intrinsics(self.cam_helpers.color_intrin_topic)
+            dist_image = dist_image.reshape(dist_image.shape[0], dist_image.shape[1])
+            dist_image = dist_image[:,:color_img.shape[1]]
+            indices = np.where(dist_image != 0)
+            pixel_indices = np.array([indices[1], indices[0]])
+            # print(pixel_indices)
+            color_pixels = self.cam_helpers.cam_pixels_to_other_cam_pixels_unaligned(pixel_indices,dist_mat,color_intr,None,False)
+            rows = np.where(color_pixels[1]<480, np.arange(color_pixels[1].shape[0]), None)
+            cols = np.where(color_pixels[0]<640, np.arange(color_pixels[0].shape[0]), None)
+            vals = np.where(np.logical_and(rows != None, cols != None), rows, None)
+            # print(np.max(color_pixels[0]))
+            vals = vals[vals!=None]
+            rows = color_pixels[1][vals.astype(int)]
+            cols = color_pixels[0][vals.astype(int)]
+            new_color_image = np.zeros_like(color_img)
+            new_color_image[rows, cols,:] = color_img[rows, cols,:]
+            color_img = new_color_image
+            # constrained_img = constrained_img.astype(np.uint8)
             # show converted depth image
-            cv2.imshow(win_name, dist_image)
+            cv2.imshow(win_name, color_img)
             key = cv2.waitKey(10) & 0xFF
 
         cv2.destroyWindow(win_name)

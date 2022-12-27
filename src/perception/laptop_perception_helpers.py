@@ -1691,8 +1691,10 @@ class RealsenseHelpers:
             if intrinsics is None:
                 intrinsics = rospy.wait_for_message(self.color_intrin_topic, CameraInfo)
             dist_mat = self.calculate_dist_3D(depth_img, intrinsics)
-
-        px_data_arr = np.array(px_data).T.reshape((2, -1), order="F")
+        if np.array(px_data).shape[0] != 2:
+            px_data_arr = np.array(px_data).T.reshape((2, -1), order="F")
+        else:
+            px_data_arr = np.array(px_data)
         (x_idx, y_idx) = (0, 1) if not reversed_pixels else (1, 0)
         xyz_arr = dist_mat[:, px_data_arr[y_idx], px_data_arr[x_idx]]
         if transform_mat is not None:
