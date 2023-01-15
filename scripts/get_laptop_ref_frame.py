@@ -21,7 +21,8 @@ class LaptopPoseDetector:
                                 'y_min': 1763   , 'y_max': 3674,
                                 'z_min': 0, 'z_max': 2258}
         ur5__tablelimits = {'x_min': -0.6359999999999999, 'x_max': 0.2829999999999999, 'y_min': -2.0, 'y_max': 0.383, 'z_min': 0.41999999999999993, 'z_max': 1.0190000000000001}
-        kobuki_limits = {'x_min': -2.0, 'x_max': 0.6920000000000002, 'y_min': -0.47899999999999987, 'y_max': -0.3999999999999999, 'z_min': -2.0, 'z_max': 2.0}
+        # kobuki_limits = {'x_min': -2.0, 'x_max': 0.6920000000000002, 'y_min': -0.5700000000000001, 'y_max': -0.3999999999999999, 'z_min': -0.901, 'z_max': -0.42799999999999994}
+        kobuki_limits = {'x_min': -2.0, 'x_max': 0.6920000000000002, 'y_min': -0.5700000000000001, 'y_max': -0.3999999999999999, 'z_min': -1.1560000000000001, 'z_max': -0.42799999999999994}
         limits = kobuki_limits
         for key, val in limits.items():
             self.trackbar_limits[key] = int(1000 * (val + 2))
