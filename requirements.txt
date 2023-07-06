@@ -1,7 +1,7 @@
 numpy==1.18.5
 tensorflow>=2.3.0
 opencv-python==4.4.0.46
-scipy==1.4.1
+scipy==1.10.0
 glob2==0.7
 tqdm==4.45.0
 matplotlib==3.2.1
